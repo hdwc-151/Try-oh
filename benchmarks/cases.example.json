@@ -1,0 +1,18 @@
+{
+  "cases": [
+    {
+      "id": "tops-front-001",
+      "person": "private/person-001.jpg",
+      "garment": "private/top-001.jpg",
+      "category": "tops",
+      "garment_photo_type": "flat-lay"
+    },
+    {
+      "id": "bottoms-front-001",
+      "person": "private/person-001.jpg",
+      "garment": "private/bottoms-001.jpg",
+      "category": "bottoms",
+      "garment_photo_type": "flat-lay"
+    }
+  ]
+}

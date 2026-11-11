@@ -130,7 +130,7 @@ export function createApp(
   app.get('/api/health', async (_request, response) => {
     try {
       await readinessCheck?.()
-      response.json({ status: 'ok', ready: true })
+      response.json({ status: 'ok', ready: true, revision: process.env.RENDER_GIT_COMMIT ?? process.env.GIT_COMMIT ?? null })
     } catch {
       response.status(503).json({ status: 'degraded', ready: false })
     }

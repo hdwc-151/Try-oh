@@ -3,6 +3,7 @@ import { Redirect } from 'expo-router';
 import { type ComponentRef, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   type TextInput,
@@ -359,7 +360,7 @@ export function AuthScreen({ initialMode = 'login' }: { initialMode?: AuthMode }
               onPress={() => void submit()}
             />
 
-            {providers.data?.google && (mode === 'login' || mode === 'register') && <>
+            {Platform.OS !== 'ios' && providers.data?.google && (mode === 'login' || mode === 'register') && <>
               <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
                 <View style={{ flex: 1, height: 1, backgroundColor: colors.separator }}/>
                 <AppText variant="caption">hoặc</AppText>

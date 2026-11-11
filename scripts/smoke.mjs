@@ -45,7 +45,8 @@ try {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email: 'smoke@example.com', displayName: 'Smoke test', password: 'smoke-password-123' }),
   })
-  assert.equal(register.status, 201, await register.text())
+  const registered = await register.json()
+  assert.equal(register.status, 201, JSON.stringify(registered))
   cookie = register.headers.getSetCookie().map(value => value.split(';')[0]).join('; ')
   const png = await sharp({ create: { width: 64, height: 96, channels: 3, background: '#336699' } }).png().toBuffer()
   const photo = () => new Blob([png], { type: 'image/png' })
@@ -78,8 +79,12 @@ try {
   const outfits = await (await request('/api/generations/outfits')).json()
   assert.equal(outfits.items.length, 1)
   assert.equal((await request(firstBody.imageUrl)).status, 200)
-  const removed = await request('/api/auth/account', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: 'smoke-password-123' }) })
-  assert.equal(removed.status, 200)
+  if (process.argv.includes('--browser')) {
+    const { browserSmoke } = await import('./browser-smoke.mjs')
+    await browserSmoke(base, cookie, registered.user.id)
+  }
+  const removed = await request('/api/auth/account', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirmation: 'DELETE' }) })
+  assert.equal(removed.status, 204, await removed.text())
   assert.equal((await request('/api/generations/outfits')).status, 401)
   console.info('Smoke passed: built UI, auth, uploads, mock try-on, one credit for a replayed request, outfit history and account deletion.')
 } catch (error) {
@@ -88,7 +93,7 @@ try {
 } finally {
   const exited = new Promise(resolve => child.once('exit', resolve))
   child.kill('SIGTERM')
-  await Promise.race([exited, delay(5000)])
+  await Promise.race([exited, delay(5000, undefined, { ref: false })])
   if (child.exitCode === null) { child.kill('SIGKILL'); await exited }
   await rm(directory, { recursive: true, force: true })
 }

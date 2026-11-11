@@ -1,0 +1,71 @@
+name: Mobile release
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        type: choice
+        options: [android, ios, all]
+        default: android
+      profile:
+        type: choice
+        options: [preview, production, simulator]
+        default: preview
+      submit:
+        description: Upload production builds to internal testing / TestFlight
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      EXPO_PROJECT_ID: ${{ vars.EXPO_PROJECT_ID }}
+      EXPO_ACCOUNT_OWNER: ${{ vars.EXPO_ACCOUNT_OWNER }}
+      EXPO_PUBLIC_API_URL: ${{ vars.EXPO_PUBLIC_API_URL }}
+      EXPO_PUBLIC_WEB_URL: ${{ vars.EXPO_PUBLIC_WEB_URL }}
+      EXPO_PUBLIC_SUPABASE_URL: ${{ vars.EXPO_PUBLIC_SUPABASE_URL }}
+      EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ vars.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+      EXPO_PUBLIC_BILLING_MODE: store
+      ASC_APP_ID: ${{ vars.ASC_APP_ID }}
+      BUILD_PLATFORM: ${{ inputs.platform }}
+      BUILD_PROFILE: ${{ inputs.profile }}
+      SUBMIT_BUILD: ${{ inputs.submit }}
+      REPOSITORY: ${{ github.repository }}
+      DEPLOY_REVISION: ${{ github.sha }}
+      REF_NAME: ${{ github.ref }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - run: node scripts/check-ci.mjs
+      - run: node scripts/check-release.mjs
+      - run: node scripts/prepare-mobile-release.mjs
+      - run: npm ci
+        working-directory: mobile
+      - run: npm run check
+        working-directory: mobile
+      - name: Build and optionally upload this build
+        working-directory: mobile
+        shell: bash
+        run: |
+          test -n "$EXPO_TOKEN" || { echo "Configure EXPO_TOKEN and EAS credentials first."; exit 1; }
+          args=(--platform "$BUILD_PLATFORM" --profile "$BUILD_PROFILE" --non-interactive --wait)
+          if [ "$SUBMIT_BUILD" = "true" ]; then args+=(--auto-submit); fi
+          npx --yes eas-cli@27.7.2 build "${args[@]}"

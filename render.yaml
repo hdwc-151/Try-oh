@@ -1,8 +1,9 @@
 services:
   - type: web
-    name: fitting-room
+    name: try-oh
     runtime: node
     plan: free
+    autoDeployTrigger: off
     buildCommand: npm ci --include=dev && npm run build && npm prune --omit=dev
     startCommand: npm start
     healthCheckPath: /api/health
@@ -17,6 +18,8 @@ services:
         - '**/*.test.ts'
         - '**/*.test.tsx'
     envVars:
+      - key: NODE_VERSION
+        value: "24.22.2"
       - key: NODE_ENV
         value: production
       - key: HOST
@@ -44,11 +47,15 @@ services:
       # Calls to the image provider are network-bound, so a few can run side by side.
       # With 1, a second user always waits a full generation and usually times out.
       - key: AI_MAX_CONCURRENCY
-        value: "3"
+        value: "2"
       - key: AI_MAX_WAITING_REQUESTS
-        value: "12"
+        value: "4"
       - key: AI_QUEUE_TIMEOUT_MS
-        value: "60000"
+        value: "15000"
+      - key: AI_DAILY_REQUEST_LIMIT
+        value: "100"
+      - key: MOBILE_AUTH_REDIRECT_URLS
+        value: tryoh://auth-callback
       - key: DATABASE_POOL_MAX
         value: "5"
       - key: AUTH_SESSION_DAYS
