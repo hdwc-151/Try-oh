@@ -1,0 +1,47 @@
+# Dependencies and generated builds
+node_modules/
+dist/
+dist-server/
+*.tsbuildinfo
+
+# Test and tool caches
+coverage/
+.vite/
+.vitest/
+.nyc_output/
+test-results/
+playwright-report/
+
+# Runtime data and local databases
+data/
+uploads/
+*.sqlite
+*.sqlite-*
+
+# Local environment files
+.env
+.env.*
+!.env.example
+*.local
+
+# Temporary and debug files
+tmp/
+temp/
+*.tmp
+*.temp
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+box_crop.png
+security_best_practices_report.md
+
+# Operating-system metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
+.gradle/
+.idea/
+settings.gradle.kts
+build/

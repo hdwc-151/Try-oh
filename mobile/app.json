@@ -1,0 +1,62 @@
+{
+  "expo": {
+    "name": "Fitsy",
+    "slug": "nam-nguyen",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "fitsy",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "bundleIdentifier": "vn.fitsy.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#141A3C",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "vn.fitsy.app"
+    },
+    "web": {
+      "output": "server",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#141A3C",
+          "image": "./assets/images/icon.png",
+          "imageWidth": 76
+        }
+      ],
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Fitsy cần truy cập thư viện ảnh để bạn chọn ảnh đại diện, ảnh toàn thân và ảnh món đồ.",
+          "cameraPermission": "Fitsy cần dùng camera để bạn chụp ảnh đại diện."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    },
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "1066e5db-7508-44e2-bade-0608af4dd63e"
+      }
+    },
+    "owner": "lmaolmao130s-team"
+  }
+}

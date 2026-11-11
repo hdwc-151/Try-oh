@@ -1,0 +1,44 @@
+/* Social page – minimal overrides only. All layout/styling is Tailwind via className. */
+
+/* Snap scrolling for vote strip */
+.social-vote-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+.social-vote-option {
+  min-width: 0;
+}
+
+/* Image pair inside a poll card */
+.social-image-pair {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  gap: 8px;
+  scrollbar-width: none;
+}
+.social-image-pair::-webkit-scrollbar { display: none }
+
+/* Anchor scroll offset for header */
+.social-poll { scroll-margin-top: 120px }
+
+@media (max-width: 720px) {
+  .social-vote-strip {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    padding-bottom: 8px;
+    scrollbar-width: none;
+  }
+  .social-vote-strip::-webkit-scrollbar { display: none }
+  .social-vote-option {
+    flex: 1 0 min(290px, 88%);
+    scroll-snap-align: start;
+  }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .social-page * { transition: none !important; scroll-behavior: auto !important }
+}

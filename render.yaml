@@ -1,0 +1,120 @@
+services:
+  - type: web
+    name: fitting-room
+    runtime: node
+    plan: free
+    buildCommand: npm ci --include=dev && npm run build && npm prune --omit=dev
+    startCommand: npm start
+    healthCheckPath: /api/health
+    buildFilter:
+      ignoredPaths:
+        - .env.example
+        - .gitignore
+        - docs/**
+        - README.md
+        - vitest.config.ts
+        - src/test/**
+        - '**/*.test.ts'
+        - '**/*.test.tsx'
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: TRUST_PROXY_HOPS
+        value: "1"
+      - key: PERSISTENCE_BACKEND
+        value: postgres
+      - key: AUTH_BACKEND
+        value: supabase
+      - key: IMAGE_STORAGE
+        value: r2
+      - key: IMAGE_PROVIDER
+        value: openrouter
+      - key: OPENROUTER_IMAGE_MODEL
+        value: black-forest-labs/flux-3-image-klein
+      - key: OPENROUTER_IMAGE_RESOLUTION
+        value: "768"
+      - key: OPENROUTER_IMAGE_ASPECT_RATIO
+        value: "4:5"
+      - key: OPENROUTER_TIMEOUT_MS
+        value: "120000"
+      # Calls to the image provider are network-bound, so a few can run side by side.
+      # With 1, a second user always waits a full generation and usually times out.
+      - key: AI_MAX_CONCURRENCY
+        value: "3"
+      - key: AI_MAX_WAITING_REQUESTS
+        value: "12"
+      - key: AI_QUEUE_TIMEOUT_MS
+        value: "60000"
+      - key: DATABASE_POOL_MAX
+        value: "5"
+      - key: AUTH_SESSION_DAYS
+        value: "30"
+      - key: ADMIN_EMAILS
+        sync: false
+      - key: AI_REQUESTS_PER_15_MIN
+        value: "10"
+      - key: API_REQUESTS_PER_MINUTE
+        value: "600"
+      - key: API_RATE_LIMIT_BURST
+        value: "120"
+      - key: AUTH_LOGIN_ACCOUNT_PER_15_MIN
+        value: "10"
+      - key: AUTH_LOGIN_IP_PER_15_MIN
+        value: "60"
+      - key: AUTH_REGISTER_IP_PER_HOUR
+        value: "20"
+      - key: AUTH_RESET_ACCOUNT_PER_15_MIN
+        value: "5"
+      - key: AUTH_RESET_IP_PER_15_MIN
+        value: "30"
+      - key: R2_PREFIX
+        value: production
+      - key: R2_SIGNED_READ_TTL_SECONDS
+        value: "300"
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_CA_CERT_BASE64
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      # Đặt cả hai để bật nút "Tiếp tục với Google"; bỏ trống thì nút tự ẩn.
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: SHOPEE_AFFILIATE_APP_ID
+        sync: false
+      - key: SHOPEE_AFFILIATE_SECRET
+        sync: false
+      - key: PAYOS_CLIENT_ID
+        sync: false
+      - key: PAYOS_API_KEY
+        sync: false
+      - key: PAYOS_CHECKSUM_KEY
+        sync: false
+      - key: MOMO_ENVIRONMENT
+        value: production
+      - key: MOMO_PARTNER_CODE
+        sync: false
+      - key: MOMO_ACCESS_KEY
+        sync: false
+      - key: MOMO_SECRET_KEY
+        sync: false
