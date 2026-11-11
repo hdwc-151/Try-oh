@@ -22,4 +22,5 @@ export type GeneratedImage = {
 
 export interface ImageProvider {
   generate(input: GenerateImageInput): Promise<GeneratedImage>
+  clearCache?(): void
 }

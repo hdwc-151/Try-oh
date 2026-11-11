@@ -1,0 +1,20 @@
+# Local prototype with persistent SQLite. Production uses Supabase + private R2.
+services:
+  tryoh:
+    build: .
+    ports:
+      - "127.0.0.1:8787:8787"
+    environment:
+      ALLOW_LOCAL_BACKENDS: "true"
+      PERSISTENCE_BACKEND: sqlite
+      AUTH_BACKEND: local
+      IMAGE_STORAGE: local
+      IMAGE_PROVIDER: mock
+      MOCK_DELAY_MS: "500"
+      DATA_DIR: /app/data
+      APP_BASE_URL: http://127.0.0.1:8787
+      COOKIE_SECURE: "false"
+    volumes:
+      - prototype-data:/app/data
+volumes:
+  prototype-data:

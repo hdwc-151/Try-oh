@@ -10,7 +10,7 @@ import { AppButton } from '@/components/app-button';
 import { AppText } from '@/components/app-text';
 import { AvatarViewer } from '@/components/avatar-viewer';
 import { AppIcon } from '@/components/icon';
-import { Try-ohMark } from '@/components/fitsy-mark';
+import { TryOhMark } from '@/components/fitsy-mark';
 import { PressableScale } from '@/components/pressable-scale';
 import { ScreenError, ScreenLoading } from '@/components/screen-state';
 import { useAuth } from '@/providers/auth-provider';
@@ -92,7 +92,7 @@ export function ProfileScreen() {
         <View style={{ width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE / 2, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.groupedBackground }}>
           {avatarSource
             ? <Image source={avatarSource} style={{ width: AVATAR_SIZE, height: AVATAR_SIZE }} contentFit="cover" transition={200}/>
-            : <Try-ohMark size={AVATAR_SIZE}/>}
+            : <TryOhMark size={AVATAR_SIZE}/>}
         </View>
         <View pointerEvents="none" style={{ position: 'absolute', right: -2, bottom: -2, width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: brand.primary, borderWidth: 2, borderColor: colors.surface }}>
           <AppIcon name="edit" size={14} color={colors.onBrand}/>

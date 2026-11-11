@@ -2,7 +2,7 @@ import { buildTryOnPrompt } from '../prompts/try-on-prompt.js'
 import type { ImageStorage } from '../storage/image-storage.js'
 import type { GenerateImageInput, GeneratedImage, ImageProvider } from './image-provider.js'
 import { ImageProviderError } from './image-provider-error.js'
-import sharp from 'sharp'
+import { ReferenceImageEncoder } from '../services/reference-image-encoder.js'
 import { AiQueueBusyError, aiImageSemaphore } from '../services/ai-concurrency.js'
 
 const OPENROUTER_IMAGE_API_URL = 'https://openrouter.ai/api/v1/images'
@@ -10,7 +10,6 @@ const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
 const MAX_INPUT_IMAGE_BYTES = 10 * 1024 * 1024
 const MAX_OUTPUT_IMAGE_BYTES = 20 * 1024 * 1024
 const MAX_REFERENCE_IMAGES = 10
-const MAX_REFERENCE_EDGE = 1_024
 
 type LoadedImage = {
   data: string
@@ -147,6 +146,7 @@ const mapUnknownError = (error: unknown): ImageProviderError => {
 }
 
 export class OpenRouterImageProvider implements ImageProvider {
+  private readonly referenceEncoder = new ReferenceImageEncoder()
   private readonly fetchImpl: typeof fetch
   private readonly timeoutMs: number
 
@@ -325,15 +325,13 @@ export class OpenRouterImageProvider implements ImageProvider {
     return this.prepareReference(buffer)
   }
 
+  clearCache() { this.referenceEncoder.clear() }
+
   private async prepareReference(buffer: Buffer): Promise<LoadedImage> {
-    const prepared = await sharp(buffer, { limitInputPixels: 24_000_000 })
-      .rotate()
-      .resize({ width: MAX_REFERENCE_EDGE, height: MAX_REFERENCE_EDGE, fit: 'inside', withoutEnlargement: true })
-      .webp({ quality: 86, effort: 3 })
-      .toBuffer()
-    if (prepared.length > MAX_INPUT_IMAGE_BYTES) {
+    const prepared = await this.referenceEncoder.encode(buffer)
+    if (prepared.data.length > Math.ceil(MAX_INPUT_IMAGE_BYTES * 4 / 3)) {
       throw new ImageProviderError('invalid_input', 400, 'Ảnh đầu vào vượt quá giới hạn sau khi tối ưu.')
     }
-    return { data: prepared.toString('base64'), mimeType: 'image/webp' }
+    return prepared
   }
 }

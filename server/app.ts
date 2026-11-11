@@ -168,6 +168,7 @@ export function createApp(
     }
     // Durable in production: failed object deletions are retried in the background.
     await cleanup.enqueue(imageKeys, 'account_deleted')
+    imageProvider.clearCache?.()
   }
   // Google sends people back to this server, not to Supabase, so its account chooser
   // shows this site's domain. Absent credentials simply leave the button hidden.

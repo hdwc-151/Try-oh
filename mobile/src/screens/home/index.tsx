@@ -8,7 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppIcon } from '@/components/icon';
 import { AppText } from '@/components/app-text';
-import { Try-ohWordmark } from '@/components/fitsy-mark';
+import { TryOhWordmark } from '@/components/fitsy-mark';
 import { NotificationsSheet } from '@/components/notifications-sheet';
 import { PressableScale } from '@/components/pressable-scale';
 import { SegmentedControl, type SegmentOption } from '@/components/segmented-control';
@@ -92,7 +92,7 @@ function HomeHeader() {
 
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.md }}>
-      <Try-ohWordmark size={32} />
+      <TryOhWordmark size={32} />
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
         <PressableScale
           accessibilityRole="button"

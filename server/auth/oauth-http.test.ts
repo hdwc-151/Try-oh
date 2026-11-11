@@ -135,12 +135,12 @@ describe('Google sign-in through our own domain', () => {
   })
 
   it('hands the mobile app a one-time code it can only spend once', async () => {
-    const { location, state } = await start('?client=mobile&redirect=' + encodeURIComponent('fitsy://auth-callback'))
+    const { location, state } = await start('?client=mobile&redirect=' + encodeURIComponent('tryoh://auth-callback'))
     expect(location).toContain('accounts.google.com')
     // No browser cookie is involved: the app receives the code on its own deep link.
     const callback = await fetch(`${baseUrl}/api/auth/oauth/callback?code=good-code&state=${state}`, { redirect: 'manual' })
     const handoff = new URL(callback.headers.get('location') ?? '').searchParams.get('fitsy_code')
-    expect(callback.headers.get('location')).toContain('fitsy://auth-callback?fitsy_code=')
+    expect(callback.headers.get('location')).toContain('tryoh://auth-callback?fitsy_code=')
     expect(cookieValue(callback, SESSION_COOKIE)).toBeUndefined()
 
     const claim = await fetch(`${baseUrl}/api/auth/oauth/session`, {
@@ -162,7 +162,7 @@ describe('Google sign-in through our own domain', () => {
   it('sends the mobile app back with the reason when Google is cancelled', async () => {
     const { state } = await start('?client=mobile')
     const callback = await fetch(`${baseUrl}/api/auth/oauth/callback?error=access_denied&state=${state}`, { redirect: 'manual' })
-    expect(callback.headers.get('location')).toBe('fitsy://auth-callback?auth_error=google_cancelled')
+    expect(callback.headers.get('location')).toBe('tryoh://auth-callback?auth_error=google_cancelled')
   })
 })
 
