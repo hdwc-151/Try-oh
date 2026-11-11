@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
-import { chromium } from 'playwright'
+import { pathToFileURL } from 'node:url'
+const { chromium } = await import(process.env.PLAYWRIGHT_MODULE
+  ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href
+  : 'playwright')
 
 export async function browserSmoke(base, cookie, userId) {
   await mkdir('test-results', { recursive: true })
