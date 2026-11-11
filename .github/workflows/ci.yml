@@ -92,7 +92,7 @@ jobs:
             -e ALLOW_LOCAL_BACKENDS=true -e IMAGE_PROVIDER=mock \
             -e PERSISTENCE_BACKEND=sqlite -e AUTH_BACKEND=local \
             -e IMAGE_STORAGE=local -e COOKIE_SECURE=false tryoh:ci
-          curl --fail --retry 20 --retry-connrefused --retry-delay 2 http://127.0.0.1:8787/api/health
+          curl --fail --retry 30 --retry-all-errors --retry-delay 2 --max-time 5 --retry-max-time 120 http://127.0.0.1:8787/api/health
       - name: Container logs and cleanup
         if: always()
         run: |
