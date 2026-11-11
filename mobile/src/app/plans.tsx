@@ -56,7 +56,7 @@ export default function PlansRoute() {
       <AppText variant="subhead">{externalBilling ? 'Thanh toán qua VietQR hoặc MoMo. Gói được kích hoạt khi hệ thống nhận webhook thành công.' : 'Xem quyền lợi và gói hiện đang sử dụng trên tài khoản của bạn.'}</AppText>
     </View>
     {checkout.error && <Notice tone="error" text={checkout.error instanceof Error ? checkout.error.message : 'Không thể tạo giao dịch.'}/>}
-    {awaitingPayment && <Notice tone="info" text="Hoàn tất thanh toán rồi quay lại Fitsy, gói sẽ tự cập nhật sau vài giây. Kéo xuống để tải lại nếu chưa thấy thay đổi."/>}
+    {awaitingPayment && <Notice tone="info" text="Hoàn tất thanh toán rồi quay lại Try-oh, gói sẽ tự cập nhật sau vài giây. Kéo xuống để tải lại nếu chưa thấy thay đổi."/>}
     {plans.data.plans.map((plan, index) => {
       const current = plans.data.current.planId === plan.id && !plans.data.current.unlimited;
       const busy = checkout.isPending && checkout.variables?.planId === plan.id;

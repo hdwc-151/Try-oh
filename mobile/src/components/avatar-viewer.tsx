@@ -6,7 +6,7 @@ import Animated, { FadeIn, FadeInDown, FadeOut, ZoomIn } from 'react-native-rean
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '@/components/app-text';
-import { FitsyMark } from '@/components/fitsy-mark';
+import { Try-ohMark } from '@/components/fitsy-mark';
 import { AppIcon, type AppIconName } from '@/components/icon';
 import { QrCode } from '@/components/qr-code';
 import { radius, spacing } from '@/theme';
@@ -76,14 +76,14 @@ export function AvatarViewer({ visible, avatar, name, username, profileLink, bus
                 <AppText variant="headline">{name}</AppText>
                 <AppText variant="subhead">@{username}</AppText>
               </View>
-              <AppText variant="caption" style={{ textAlign: 'center', maxWidth: 260 }}>Quét mã để kết bạn với bạn trên Fitsy</AppText>
+              <AppText variant="caption" style={{ textAlign: 'center', maxWidth: 260 }}>Quét mã để kết bạn với bạn trên Try-oh</AppText>
             </Animated.View>
           : <Animated.View key="avatar" entering={ZoomIn.duration(220)} style={{ alignItems: 'center' }}>
               <View style={{ width: size, height: size }}>
                 <View style={{ width: size, height: size, borderRadius: size / 2, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', backgroundColor: SURFACE }}>
                   {avatar
                     ? <Image source={avatar} contentFit="cover" style={{ width: size, height: size }}/>
-                    : <FitsyMark size={size * 0.45}/>}
+                    : <Try-ohMark size={size * 0.45}/>}
                   {busy && <View style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(14, 17, 30, 0.5)' }}><ActivityIndicator size="large" color="#FFFFFF"/></View>}
                 </View>
                 {!menuOpen && !busy && <Pressable

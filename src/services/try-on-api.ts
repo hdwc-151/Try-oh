@@ -7,6 +7,8 @@ let cachedOutfits: SavedOutfit[] | null = null
 let outfitsExpireAt = 0
 let outfitsRequest: Promise<SavedOutfit[]> | null = null
 let outfitsEpoch = 0
+const generationKeys = new Map<string, string>()
+const generationRequests = new Map<string, Promise<GeneratedTryOnResult>>()
 
 const invalidateOutfits = () => {
   outfitsEpoch += 1
@@ -26,6 +28,8 @@ const parseError = async (response: Response) => {
 
 export const tryOnApi = {
   clearCache: () => {
+    generationKeys.clear()
+    generationRequests.clear()
     invalidateOutfits()
     outfitsRequest = null
   },
@@ -42,19 +46,34 @@ export const tryOnApi = {
   },
 
   async generateAngle(angle: TryOnAngle, garmentIds: string[], preservePose = true, privacyConfirmed = false): Promise<GeneratedTryOnResult> {
+    const fingerprint = JSON.stringify([angle, garmentIds, preservePose, privacyConfirmed])
+    const pending = generationRequests.get(fingerprint)
+    if (pending) return pending
+    const key = generationKeys.get(fingerprint) ?? crypto.randomUUID()
+    generationKeys.set(fingerprint, key)
     const epoch = outfitsEpoch
-    const response = await apiFetch(`/api/generations/angles/${angle}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        garmentIds,
-        privacyConfirmed,
-        preservePose,
-      }),
-    })
-    if (!response.ok) throw new Error(await parseError(response))
-    if (epoch === outfitsEpoch) invalidateOutfits()
-    return response.json() as Promise<GeneratedTryOnResult>
+    const run = async () => {
+      // Network failures retain the key; the next attempt can recover a result.
+      // A confirmed HTTP error ends this attempt. New user intent gets a new key.
+      const response = await apiFetch('/api/generations/angles/' + angle, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key },
+        body: JSON.stringify({ garmentIds, privacyConfirmed, preservePose }),
+      })
+      if (!response.ok) {
+        const problem = await response.json().catch(() => ({})) as { message?: string; code?: string }
+        if (problem.code !== 'generation_in_progress') generationKeys.delete(fingerprint)
+        throw new Error(problem.message ?? 'Không thể tạo ảnh.')
+      }
+      const result = await response.json() as GeneratedTryOnResult
+      generationKeys.delete(fingerprint)
+      if (epoch === outfitsEpoch) invalidateOutfits()
+      return result
+    }
+    const request = run()
+    generationRequests.set(fingerprint, request)
+    try { return await request }
+    finally { if (generationRequests.get(fingerprint) === request) generationRequests.delete(fingerprint) }
   },
 
   async listOutfits(options?: { force?: boolean }): Promise<SavedOutfit[]> {

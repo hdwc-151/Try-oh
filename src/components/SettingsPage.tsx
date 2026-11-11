@@ -283,7 +283,7 @@ export function SettingsPage({
 
               {user.hasPassword === false ? (
                 <SettingsCard icon={KeyRound} title="Đăng nhập bằng Google" className="lg:col-span-2">
-                  <p className="text-sm leading-6 text-ink/60">Tài khoản <span className="font-semibold text-ink">{user.email}</span> đăng nhập bằng Google nên không có mật khẩu Fitsy. Email và mật khẩu được quản lý trong tài khoản Google của bạn.</p>
+                  <p className="text-sm leading-6 text-ink/60">Tài khoản <span className="font-semibold text-ink">{user.email}</span> đăng nhập bằng Google nên không có mật khẩu Try-oh. Email và mật khẩu được quản lý trong tài khoản Google của bạn.</p>
                 </SettingsCard>
               ) : <>
               <SettingsCard icon={Mail} title="Địa chỉ email">

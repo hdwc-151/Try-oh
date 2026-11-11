@@ -1,14 +1,14 @@
 {
   "expo": {
-    "name": "Fitsy",
-    "slug": "nam-nguyen",
+    "name": "Try-oh",
+    "slug": "try-oh",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "fitsy",
+    "scheme": "tryoh",
     "userInterfaceStyle": "light",
     "ios": {
-      "bundleIdentifier": "vn.fitsy.app"
+      "bundleIdentifier": "com.hdwc151.tryoh"
     },
     "android": {
       "adaptiveIcon": {
@@ -18,7 +18,7 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "vn.fitsy.app"
+      "package": "com.hdwc151.tryoh"
     },
     "web": {
       "output": "server",
@@ -52,11 +52,7 @@
         "asyncRoutes": {
           "web": true
         }
-      },
-      "eas": {
-        "projectId": "1066e5db-7508-44e2-bade-0608af4dd63e"
       }
-    },
-    "owner": "lmaolmao130s-team"
+    }
   }
 }

@@ -12,7 +12,7 @@ import Animated, { FadeIn, FadeInDown, LinearTransition } from 'react-native-rea
 
 import { AppButton } from '@/components/app-button';
 import { AppText } from '@/components/app-text';
-import { FitsyMark, FitsyWordmark } from '@/components/fitsy-mark';
+import { Try-ohMark, Try-ohWordmark } from '@/components/fitsy-mark';
 import { Notice } from '@/components/notice';
 import { SegmentedControl } from '@/components/segmented-control';
 import { TextField } from '@/components/text-field';
@@ -214,8 +214,8 @@ export function AuthScreen({ initialMode = 'login' }: { initialMode?: AuthMode }
         }}>
         <View style={{ width: '100%', maxWidth: 520, gap: spacing.lg }}>
           <Animated.View entering={FadeInDown.duration(380)} style={{ alignItems: 'center', gap: spacing.md }}>
-            <FitsyMark size={64} />
-            <FitsyWordmark size={32} />
+            <Try-ohMark size={64} />
+            <Try-ohWordmark size={32} />
           </Animated.View>
 
           <Animated.View entering={FadeInDown.duration(380).delay(80)} layout={LinearTransition.duration(220)} style={{

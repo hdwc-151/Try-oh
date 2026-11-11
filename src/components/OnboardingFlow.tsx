@@ -91,12 +91,12 @@ export function OnboardingFlow({ user, hasGarments, onComplete }: OnboardingFlow
           <div className="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:p-10">
             <div className="mb-7 flex items-center justify-between">
               <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-sage-700">Thiết lập {step + 1}/5</span>
-              <span className="text-xs font-semibold text-ink/35">Fitsy</span>
+              <span className="text-xs font-semibold text-ink/35">Try-oh</span>
             </div>
 
             {step === 0 && (
               <div className="py-6 text-center">
-                <BrandMark className="mx-auto size-16" label="Fitsy" />
+                <BrandMark className="mx-auto size-16" label="Try-oh" />
                 <h1 className="mt-6 font-display text-3xl font-bold text-ink sm:text-4xl">Tủ đồ của bạn, theo cách riêng.</h1>
                 <p className="mx-auto mt-3 max-w-xl text-sm leading-7 text-ink/55">Lưu trang phục, thử phối đồ và chỉ chia sẻ với những người bạn chọn. Không có lượt thích hay bảng xếp hạng.</p>
               </div>

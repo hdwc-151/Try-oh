@@ -46,7 +46,7 @@ export const runtimeConfig = {
   legacyDataClaimToken: process.env.LEGACY_DATA_CLAIM_TOKEN?.trim() || undefined,
   // Deep links the mobile app may be sent back to after a Google sign-in. Anything
   // not listed here is refused, so a crafted link cannot carry a session elsewhere.
-  mobileAuthRedirects: (process.env.MOBILE_AUTH_REDIRECT_URLS ?? 'fitsy://auth-callback')
+  mobileAuthRedirects: (process.env.MOBILE_AUTH_REDIRECT_URLS ?? 'tryoh://auth-callback')
     .split(',').map(value => value.trim()).filter(Boolean),
   adminEmails: (process.env.ADMIN_EMAILS ?? '').split(',').map(value => value.trim().toLowerCase()).filter(Boolean),
 }

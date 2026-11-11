@@ -4,7 +4,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { createContext, type PropsWithChildren, use, useEffect, useMemo, useState } from 'react';
 import { AppState } from 'react-native';
 
-import { apiBaseUrl } from '@/services/api-client';
+import { apiBaseUrl, apiConfigurationError } from '@/services/api-client';
 import { authConfigurationError, getSessionWithTimeout, supabase } from '@/services/supabase';
 
 type AuthContextValue = {
@@ -33,7 +33,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 const consumedCodes = new Set<string>();
 const googleFailure = 'Không thể đăng nhập bằng Google. Vui lòng thử lại.';
 /** Địa chỉ app nhận lại sau khi đăng nhập; máy chủ chỉ chấp nhận địa chỉ trong danh sách của nó. */
-const googleRedirect = 'fitsy://auth-callback';
+const googleRedirect = 'tryoh://auth-callback';
 
 type HandoffSession = { accessToken: string; refreshToken: string };
 
@@ -97,7 +97,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       if (isRecovery) setRecoveryMode(true);
       setLinkError(null);
 
-      // Quay về từ đăng nhập Google (máy chủ Fitsy gửi kèm mã dùng một lần).
+      // Quay về từ đăng nhập Google (máy chủ Try-oh gửi kèm mã dùng một lần).
       const handoff = parsed.queryParams?.fitsy_code;
       if (typeof handoff === 'string') {
         try {
@@ -153,7 +153,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     user: session?.user ?? null,
     recoveryMode,
     linkError,
-    configurationError: authConfigurationError,
+    configurationError: apiConfigurationError ?? authConfigurationError,
     signIn: async (email, password) => {
       const { error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
       if (error) {
@@ -190,7 +190,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       return data.session ? 'signed-in' : 'confirmation-required';
     },
     signInWithGoogle: async () => {
-      // Mở trang đăng nhập của chính máy chủ Fitsy: Google hiện tên miền Fitsy,
+      // Mở trang đăng nhập của chính máy chủ Try-oh: Google hiện tên miền Try-oh,
       // không phải địa chỉ project Supabase.
       const startUrl = apiBaseUrl + '/api/auth/oauth/google?client=mobile&redirect=' + encodeURIComponent(googleRedirect);
       const result = await WebBrowser.openAuthSessionAsync(startUrl, googleRedirect);

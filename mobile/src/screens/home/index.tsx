@@ -8,7 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppIcon } from '@/components/icon';
 import { AppText } from '@/components/app-text';
-import { FitsyWordmark } from '@/components/fitsy-mark';
+import { Try-ohWordmark } from '@/components/fitsy-mark';
 import { NotificationsSheet } from '@/components/notifications-sheet';
 import { PressableScale } from '@/components/pressable-scale';
 import { SegmentedControl, type SegmentOption } from '@/components/segmented-control';
@@ -92,7 +92,7 @@ function HomeHeader() {
 
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.md }}>
-      <FitsyWordmark size={32} />
+      <Try-ohWordmark size={32} />
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
         <PressableScale
           accessibilityRole="button"
@@ -136,7 +136,7 @@ function ShopComingSoon() {
       </View>
       <AppText variant="title" style={{ textAlign: 'center' }}>Shop sắp ra mắt</AppText>
       <AppText variant="subhead" style={{ textAlign: 'center', maxWidth: 320 }}>
-        Fitsy sẽ gợi ý sản phẩm hợp gu bạn từ các KOL/KOC trên Shopee, TikTok Shop và shop ngoài sàn — thử ngay trên ảnh của bạn trước khi mua.
+        Try-oh sẽ gợi ý sản phẩm hợp gu bạn từ các KOL/KOC trên Shopee, TikTok Shop và shop ngoài sàn — thử ngay trên ảnh của bạn trước khi mua.
       </AppText>
     </ScrollView>
   );

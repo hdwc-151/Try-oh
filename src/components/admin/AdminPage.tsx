@@ -61,7 +61,7 @@ export function AdminPage({user,onNavigate}:{user:AuthUser;onNavigate:(view:AppV
       <section className="overflow-hidden rounded-[30px] bg-[linear-gradient(135deg,#17211d,#2f4937)] p-6 text-white shadow-xl sm:p-8">
         <button onClick={()=>onNavigate('profile')} className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3.5 py-2 text-xs font-semibold text-white/75 hover:bg-white/15"><ArrowLeft size={14}/>Về tài khoản</button>
         <div className="mt-7 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
-          <div><div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-200"><ShieldCheck size={14}/>Khu vực được bảo vệ</div><h1 className="mt-2 font-display text-3xl font-bold">Quản trị Fitsy</h1><p className="mt-2 text-sm text-white/55">Người dùng, phân quyền và lịch sử thay đổi hệ thống.</p></div>
+          <div><div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-200"><ShieldCheck size={14}/>Khu vực được bảo vệ</div><h1 className="mt-2 font-display text-3xl font-bold">Quản trị Try-oh</h1><p className="mt-2 text-sm text-white/55">Người dùng, phân quyền và lịch sử thay đổi hệ thống.</p></div>
           <div className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3"><p className="text-[10px] uppercase tracking-wider text-white/45">Đang đăng nhập</p><p className="mt-1 text-sm font-bold">{user.email}</p><p className="text-[10px] text-emerald-200">{roleLabels[user.role]}</p></div>
         </div>
       </section>

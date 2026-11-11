@@ -25,7 +25,7 @@ export function KocStudioPage({ user, onNavigate }: { user: AuthUser; onNavigate
 
   return <main className="mx-auto w-full max-w-[1120px] px-3 py-5 sm:px-6 sm:py-8">
     <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
-      <div className="flex items-center gap-3"><button onClick={()=>onNavigate('feed')} className="grid size-10 place-items-center rounded-full border border-black/10 bg-white" aria-label="Quay lại"><ArrowLeft size={18}/></button><div><p className="text-[10px] font-bold uppercase tracking-[.18em] text-sage-700">Fitsy creator</p><h1 className="font-display text-2xl font-bold sm:text-3xl">{isCreator?'Không gian KOL/KOC':'KOL/KOC bạn theo dõi'}</h1></div></div>
+      <div className="flex items-center gap-3"><button onClick={()=>onNavigate('feed')} className="grid size-10 place-items-center rounded-full border border-black/10 bg-white" aria-label="Quay lại"><ArrowLeft size={18}/></button><div><p className="text-[10px] font-bold uppercase tracking-[.18em] text-sage-700">Try-oh creator</p><h1 className="font-display text-2xl font-bold sm:text-3xl">{isCreator?'Không gian KOL/KOC':'KOL/KOC bạn theo dõi'}</h1></div></div>
       {isCreator&&<button onClick={()=>setCompose(current=>!current)} className="flex items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-sm font-bold text-white"><Plus size={16}/>Tải outfit</button>}
     </header>
     {error&&<p role="alert" className="mb-5 rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}

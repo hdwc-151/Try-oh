@@ -16,14 +16,14 @@ import { router } from 'expo-router';
 import { ScreenError, ScreenLoading } from '@/components/screen-state';
 import { useAuth } from '@/providers/auth-provider';
 import { ApiError, apiRequest, protectedImageSource } from '@/services/api-client';
+import { generateTryOn } from '@/services/generation-api';
 import { imageUploadFile } from '@/services/image-upload';
 import { colors, radius, spacing, useBrandColors } from '@/theme';
 import { categoryNames } from '@/screens/wardrobe';
-import type { CreditStatus, Garment, PageResponse, PersonImage, PlanSnapshot, TryOnResult } from '@/types/api';
+import type { Garment, PageResponse, PersonImage, PlanSnapshot, TryOnResult } from '@/types/api';
 
 const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase().trim();
 
-type GenerationResponse = TryOnResult & { credits: CreditStatus; outfitSaved?: boolean };
 type TryOnNotice = { tone: 'success' | 'info'; text: string };
 /** Thời gian ước tính một lần tạo ảnh, dùng cho thanh tiến độ (chỉ để báo hiệu, không phải tiến độ thật). */
 const EXPECTED_GENERATION_MS = 45_000;
@@ -89,10 +89,18 @@ export function TryOnScreen({ onOpenWardrobe }: { onOpenWardrobe?: () => void } 
     },
   });
   const generate = useMutation({
-    mutationFn: (angle: 'front' | 'back') => apiRequest<GenerationResponse>('/api/generations/angles/' + angle, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ garmentIds: selectedGarmentIds, privacyConfirmed: privacyConsent, preservePose: true }),
-    }),
+    retry: false,
+    mutationFn: (angle: 'front' | 'back') => generateTryOn(angle,
+      { garmentIds: selectedGarmentIds, privacyConfirmed: privacyConsent, preservePose: true },
+      {
+        userId: session?.user.id ?? '',
+        personImage: person.data?.item?.imageUrl ?? '',
+        frontReference: angle === 'back' ? results.data?.items.find((item) => item.angle === 'front')?.imageUrl ?? '' : '',
+      }),
+    onError: () => {
+      void queryClient.invalidateQueries({ queryKey: ['try-on-results'] });
+      void queryClient.invalidateQueries({ queryKey: ['credits'] });
+    },
     onSuccess: (item) => {
       queryClient.setQueryData<{ items: TryOnResult[] }>(['try-on-results'], (current) => ({
         items: item.angle === 'front'

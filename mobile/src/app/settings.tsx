@@ -198,7 +198,7 @@ function SettingsContent({ snapshot }: { snapshot: SocialSnapshot }) {
       </SettingsCard>
 
       {!hasPassword && <SettingsCard title="Đăng nhập bằng Google">
-        <AppText variant="subhead">Tài khoản {auth.user?.email} đăng nhập bằng Google nên không có mật khẩu Fitsy. Email và mật khẩu được quản lý trong tài khoản Google của bạn.</AppText>
+        <AppText variant="subhead">Tài khoản {auth.user?.email} đăng nhập bằng Google nên không có mật khẩu Try-oh. Email và mật khẩu được quản lý trong tài khoản Google của bạn.</AppText>
       </SettingsCard>}
 
       {hasPassword && <SettingsCard title="Địa chỉ email">

@@ -35,12 +35,12 @@ export function BrandLogo({
   inverse = false,
 }: BrandLogoProps) {
   return (
-    <span className={`inline-flex items-center gap-3 ${className}`} aria-label="Fitsy">
+    <span className={`inline-flex items-center gap-3 ${className}`} aria-label="Try-oh">
       <BrandMark className={markClassName} />
       <span
         className={`font-display text-xl font-extrabold tracking-[-0.04em] ${inverse ? 'text-white' : 'text-ink'} ${wordmarkClassName}`}
       >
-        Fitsy<span aria-hidden="true" className="ml-0.5 align-super text-[0.55em] text-[#FF5A6E]">✦</span>
+        Try-oh<span aria-hidden="true" className="ml-0.5 align-super text-[0.55em] text-[#FF5A6E]">✦</span>
       </span>
     </span>
   )

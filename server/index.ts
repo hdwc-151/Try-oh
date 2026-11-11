@@ -47,6 +47,7 @@ import { PayosGateway } from './billing/payos-gateway.js'
 import { MomoGateway } from './billing/momo-gateway.js'
 import type { PaymentGateway } from './billing/types.js'
 import { ExcelPaymentLedger } from './billing/excel-payment-ledger.js'
+import { PostgresGenerationRequestStore, SqliteGenerationRequestStore, type GenerationRequestStore } from './services/generation-requests.js'
 
 // libvips keeps decoded pixels of recent operations in a cache (50 MB by default).
 // Every upload here is a different image, so the cache only costs memory.
@@ -100,6 +101,8 @@ let sqliteDatabasePath: string | undefined
 if (persistenceBackend === 'postgres') {
   postgresPool = createPostgresPool(process.env.DATABASE_URL ?? '')
   await postgresPool.query('SELECT 1')
+  const schema = await postgresPool.query("SELECT to_regclass('public.generation_requests') AS name")
+  if (!schema.rows[0]?.name) throw new Error('Database schema is behind this release. Run npm run db:migrate before starting.')
   repository = new PostgresGarmentRepository(postgresPool)
   userDataRepository = new PostgresUserDataRepository(postgresPool)
 } else if (persistenceBackend === 'sqlite') {
@@ -148,6 +151,9 @@ if (authBackend === 'supabase') {
 }
 
 const imageProvider = createImageProvider(imageStorage, { port })
+const generationRequests: GenerationRequestStore = postgresPool
+  ? new PostgresGenerationRequestStore(postgresPool)
+  : new SqliteGenerationRequestStore(sqliteDatabasePath!)
 const social: SocialService = persistenceBackend === 'sqlite'
   ? new SocialStore(path.join(dataDirectory, 'fitting-room.sqlite'), userDataRepository as SqliteUserDataRepository)
   : new PostgresSocialStore(postgresPool!)
@@ -228,6 +234,7 @@ const app = createApp(
     if (postgresPool) await postgresPool.query('SELECT 1')
   },
   storageCleanup,
+  generationRequests,
 )
 const server = createHttpServer(app)
 let closeVite: (() => Promise<void>) | undefined
@@ -303,6 +310,7 @@ const shutdown = async (signal: string) => {
       Promise.resolve(creditService.close()),
       Promise.resolve(planService.close()),
       Promise.resolve(billingService.close()),
+      Promise.resolve(generationRequests.close?.()),
     ])
     await postgresPool?.end().catch(() => undefined)
   }

@@ -390,7 +390,7 @@ function App() {
   }, [])
 
   if (user === undefined) {
-    return <div className="grid min-h-[100dvh] place-items-center bg-canvas"><div className="text-center text-ink/40"><BrandMark className="mx-auto mb-3 size-12" label="Fitsy" /><LoaderCircle size={20} className="mx-auto animate-spin" /><p className="mt-3 text-xs font-semibold">Đang mở phòng thử…</p></div></div>
+    return <div className="grid min-h-[100dvh] place-items-center bg-canvas"><div className="text-center text-ink/40"><BrandMark className="mx-auto mb-3 size-12" label="Try-oh" /><LoaderCircle size={20} className="mx-auto animate-spin" /><p className="mt-3 text-xs font-semibold">Đang mở phòng thử…</p></div></div>
   }
 
   if (!user) {

@@ -179,7 +179,7 @@ export function WardrobeScreen({ fixedMode }: { fixedMode?: CatalogMode } = {}) 
     extract.reset();
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert('Cần quyền truy cập ảnh', 'Hãy cho phép Fitsy truy cập thư viện ảnh để thêm món đồ.');
+      Alert.alert('Cần quyền truy cập ảnh', 'Hãy cho phép Try-oh truy cập thư viện ảnh để thêm món đồ.');
       return;
     }
     const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: false, quality: 0.9 });

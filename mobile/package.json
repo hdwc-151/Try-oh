@@ -45,7 +45,13 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run lint && npm run typecheck",
+    "build:android": "npx eas-cli@latest build -p android --profile preview",
+    "build:ios": "npx eas-cli@latest build -p ios --profile preview",
+    "submit:android": "npx eas-cli@latest submit -p android --profile production",
+    "submit:ios": "npx eas-cli@latest submit -p ios --profile production"
   },
   "private": true
 }

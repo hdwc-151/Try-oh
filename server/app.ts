@@ -36,6 +36,8 @@ import { MemoryPlanRepository } from './plans/memory-plan-repository.js'
 import { createPlanRouter } from './plans/router.js'
 import type { BillingService } from './billing/billing-service.js'
 import { createBillingRouter, createBillingWebhookRouter } from './billing/router.js'
+import { generationIdempotency } from './http/generation-idempotency.js'
+import { MemoryGenerationRequestStore, type GenerationRequestStore } from './services/generation-requests.js'
 
 export function createApp(
   repository: GarmentRepository,
@@ -54,6 +56,7 @@ export function createApp(
   billingService?: BillingService,
   readinessCheck?: () => Promise<void>,
   storageCleanup?: StorageCleanup,
+  generationRequests: GenerationRequestStore = new MemoryGenerationRequestStore(),
 ) {
   const cleanup = storageCleanup ?? new ImmediateStorageCleanup(images)
   const app = express()
@@ -159,6 +162,7 @@ export function createApp(
       await social?.deleteUserData(user.id)
       await Promise.all(garments.map(item => repository.delete(user.id, item.id)))
       await userDataRepository.clearAllUserData(user.id)
+      await generationRequests.deleteUser(user.id)
     } catch (error) {
       console.error('[account.delete] Database cleanup needs retry:', error instanceof Error ? error.message : 'Unknown error')
     }
@@ -271,6 +275,8 @@ export function createApp(
   if (admin) app.use('/api/admin', requireAuth, createAdminRouter(admin, social))
   if (billingService) app.use('/api/billing', requireAuth, createBillingRouter(billingService, sharedRateLimits))
   app.use('/api/plans', requireAuth, createPlanRouter(plans))
+  // Retry receipts bypass both AI rate limits and the daily spend ceiling.
+  app.post('/api/generations/angles/:angle', requireAuth, generationIdempotency(generationRequests))
   // Global circuit breaker for paid AI calls, shared across instances through the
   // rate-limit store. Disabled unless AI_DAILY_REQUEST_LIMIT is set.
   if (runtimeConfig.aiDailyRequestLimit) {

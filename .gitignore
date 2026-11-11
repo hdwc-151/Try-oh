@@ -22,6 +22,8 @@ uploads/
 .env
 .env.*
 !.env.example
+!.env.*.example
+!.env.production.example
 *.local
 
 # Temporary and debug files
@@ -45,3 +47,41 @@ Desktop.ini
 .idea/
 settings.gradle.kts
 build/
+# Native projects are generated from Expo config, never hand-maintained.
+mobile/ios/
+mobile/android/
+mobile/.expo/
+mobile/dist/
+mobile/web-build/
+mobile/expo-env.d.ts
+# Credentials and signed release artifacts
+credentials.json
+google-services.json
+GoogleService-Info.plist
+*service-account*.json
+*.keystore
+*.jks
+*.p8
+*.p12
+*.mobileprovision
+*.ipa
+*.aab
+*.apk
+*.pem
+*.key
+*.db
+*.db-*
+.eas/
+.expo/
+# GPU weights and private evaluation data
+weights/
+checkpoints/
+*.safetensors
+*.ckpt
+*.pt
+*.onnx
+benchmarks/private/
+benchmarks/results/
+__pycache__/
+.pytest_cache/
+.venv/

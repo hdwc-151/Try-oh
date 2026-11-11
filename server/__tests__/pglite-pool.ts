@@ -25,10 +25,10 @@ const SUPABASE_STUBS = `
 
 export type TestDatabase = { pool: PostgresPool; db: PGlite; createUser: (id: string, email: string, name?: string) => Promise<void>; close: () => Promise<void> }
 
-export async function createTestDatabase(): Promise<TestDatabase> {
+export async function createTestDatabase(applySchema = true): Promise<TestDatabase> {
   const db = new PGlite()
   await db.exec(SUPABASE_STUBS)
-  for (const file of readdirSync(MIGRATIONS_DIR).filter(name => name.endsWith('.sql')).sort()) {
+  for (const file of applySchema ? readdirSync(MIGRATIONS_DIR).filter(name => name.endsWith('.sql')).sort() : []) {
     await db.exec(readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8'))
   }
   // PGlite is a single connection, so serialise access the way a pool would.
@@ -39,7 +39,9 @@ export async function createTestDatabase(): Promise<TestDatabase> {
     return next
   }
   const run = async (text: string, values?: unknown[]) => {
-    const result = await db.query(text, values as never[])
+    const result = values?.length
+      ? await db.query(text, values as never[])
+      : (await db.exec(text)).at(-1) ?? { rows: [], affectedRows: 0 }
     return { rows: result.rows, rowCount: result.affectedRows ?? result.rows.length }
   }
   const pool = {

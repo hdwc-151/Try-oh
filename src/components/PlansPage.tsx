@@ -77,7 +77,7 @@ export function PlansPage({ snapshot, loading, error, onNavigate, onReload }: Pl
       <section className="overflow-hidden rounded-[32px] bg-[radial-gradient(circle_at_top_right,rgba(250,204,21,0.22),transparent_34%),linear-gradient(135deg,#111714,#273a2e)] px-5 py-7 text-white shadow-xl sm:px-9 sm:py-10">
         <button type="button" onClick={() => onNavigate('settings')} className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3.5 py-2 text-xs font-bold text-white/75 transition hover:bg-white/15"><ArrowLeft size={14}/>Cài đặt</button>
         <div className="mt-8 max-w-2xl">
-          <span className="inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-amber-200"><Crown size={14}/>Fitsy membership</span>
+          <span className="inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-amber-200"><Crown size={14}/>Try-oh membership</span>
           <h1 className="mt-3 font-display text-3xl font-bold tracking-tight sm:text-5xl">Chọn không gian phù hợp với gu của bạn</h1>
           <p className="mt-4 max-w-xl text-sm leading-6 text-white/60">Mở rộng lượt tạo ảnh, tủ đồ và số outfit có thể lưu. Bạn vẫn có thể dùng gói Free mà không cần nhập thông tin thanh toán.</p>
         </div>
@@ -104,7 +104,7 @@ export function PlansPage({ snapshot, loading, error, onNavigate, onReload }: Pl
 function PlanCard({ plan, current, checkoutKey, onCheckout }: { plan: SubscriptionPlan; current: boolean; checkoutKey: string | null; onCheckout: (planId: SubscriptionPlan['id'], provider: PaymentProvider) => void }) {
   return <article className={`relative flex min-h-[420px] flex-col rounded-[28px] border p-5 transition sm:p-6 ${plan.recommended ? 'border-sage-600 bg-[#17211d] text-white shadow-xl' : 'border-black/[0.07] bg-panel text-ink shadow-sm'}`}>
     {plan.recommended && <span className="absolute right-4 top-4 rounded-full bg-amber-300 px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider text-[#17211d]">Đề xuất</span>}
-    <p className={`text-[10px] font-bold uppercase tracking-[0.18em] ${plan.recommended ? 'text-emerald-200' : 'text-sage-700'}`}>Fitsy {plan.name}</p>
+    <p className={`text-[10px] font-bold uppercase tracking-[0.18em] ${plan.recommended ? 'text-emerald-200' : 'text-sage-700'}`}>Try-oh {plan.name}</p>
     <p className="mt-5 font-display text-3xl font-bold">{plan.monthlyPriceVnd === 0 ? 'Miễn phí' : `${money.format(plan.monthlyPriceVnd)}đ`}</p>
     {plan.monthlyPriceVnd > 0 && <p className={`mt-1 text-xs ${plan.recommended ? 'text-white/45' : 'text-ink/40'}`}>mỗi tháng · giá đề xuất</p>}
     <p className={`mt-4 min-h-12 text-sm leading-6 ${plan.recommended ? 'text-white/60' : 'text-ink/50'}`}>{plan.description}</p>

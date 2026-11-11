@@ -12,7 +12,7 @@ export const colors = {
   onBrand: '#FFFFFF',
 } as const;
 
-/** Fitsy: navy chủ đạo, tím nhấn, hồng cho dấu lấp lánh của logo. */
+/** Try-oh: navy chủ đạo, tím nhấn, hồng cho dấu lấp lánh của logo. */
 const brand = {
   primary: '#141A3C',
   secondary: '#EFEAFF',

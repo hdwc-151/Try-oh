@@ -1,5 +1,6 @@
 import type { PersonImage } from '../types/fitting-room'
 import { apiFetch } from './api-client'
+import { tryOnApi } from './try-on-api'
 
 type PersonImageResponse = { item: PersonImage | null }
 
@@ -34,16 +35,19 @@ export const personApi = {
     form.set('warnings', JSON.stringify(input.warnings))
     const response = await apiFetch('/api/person-image', { method: 'POST', body: form })
     if (!response.ok) throw new Error(await parseError(response))
+    tryOnApi.clearCache()
     return response.json() as Promise<PersonImage>
   },
 
   async deletePersonImage(): Promise<void> {
     const response = await apiFetch('/api/person-image', { method: 'DELETE' })
     if (!response.ok) throw new Error(await parseError(response))
+    tryOnApi.clearCache()
   },
 
   async deleteAllUserData(): Promise<void> {
     const response = await apiFetch('/api/user-data', { method: 'DELETE' })
     if (!response.ok) throw new Error(await parseError(response))
+    tryOnApi.clearCache()
   },
 }
