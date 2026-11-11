@@ -8,7 +8,9 @@ export async function browserSmoke(base, cookie, userId) {
   const errors = []
   try {
     const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
-    await context.addInitScript(id => localStorage.setItem('fitsy:onboarding:' + id + ':v1', 'complete'), userId)
+    await context.addInitScript(({ origin, id }) => {
+      if (location.origin === origin) localStorage.setItem('fitsy:onboarding:' + id + ':v1', 'complete')
+    }, { origin: base, id: userId })
     await context.addCookies(cookie.split('; ').map(pair => {
       const index = pair.indexOf('=')
       return { name: pair.slice(0, index), value: pair.slice(index + 1), url: base, httpOnly: true, sameSite: 'Lax' }
