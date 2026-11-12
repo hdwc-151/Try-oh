@@ -4,7 +4,7 @@ Use Node.js 24. Run npm test, npm run build and npm run smoke for API/web change
 
 Preserve provenance in UPSTREAM.md. Do not assign a license to upstream code without the owner's terms. Keep user images, credentials, weights and private benchmarks out of Git.
 
-Use SQLite/local auth/mock AI for isolated tests. Production uses Supabase Auth/PostgreSQL and private R2. Add migrations; never edit applied migration history.
+Use SQLite/local auth/mock AI for isolated tests. Production uses Supabase Auth/PostgreSQL and private Supabase Storage or R2. Keep image buckets private; only the authorized API issues signed read URLs. Add migrations; never edit applied migration history.
 
 AI generation must retain per-user idempotency and credit accounting. Never automatically repeat an ambiguous paid request. GPU timings and quality claims must come from actual measured runs; mock/CPU/dry-run results are not GPU benchmarks.
 

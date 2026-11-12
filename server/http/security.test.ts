@@ -5,6 +5,17 @@ import { setSecurityHeaders } from './security.js'
 describe('security headers', () => {
   afterEach(() => vi.unstubAllEnvs())
 
+  it('allows signed Supabase images only from the configured HTTPS origin', () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('IMAGE_STORAGE', 'supabase')
+    vi.stubEnv('SUPABASE_URL', 'https://project.supabase.co')
+    const headers = new Map<string, string>()
+    const response = { setHeader: (name: string, value: string) => { headers.set(name, value) } } as unknown as Response
+    setSecurityHeaders({} as Request, response, (() => undefined) as NextFunction)
+    expect(headers.get('Content-Security-Policy')).toContain('https://project.supabase.co')
+    expect(headers.get('Content-Security-Policy')).not.toContain('https://*.supabase.co')
+  })
+
   it('allows only the configured R2 image origin in production CSP', () => {
     vi.stubEnv('NODE_ENV', 'production')
     vi.stubEnv('R2_ACCOUNT_ID', 'abc123')

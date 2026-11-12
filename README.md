@@ -13,11 +13,11 @@ Dự án bắt đầu từ [VN_VTON](https://github.com/NHNam1306/VN_VTON), snap
 | Prototype web | Chạy local bằng SQLite, lưu ảnh local và AI mock, không cần API key |
 | Web/API | React + Vite + Express; có đăng nhập, tủ đồ, tạo ảnh, lịch sử và social |
 | Database production | Adapter Supabase PostgreSQL, RLS/index, migration có lock/checksum/rollback |
-| Ảnh production | R2 private, kiểm tra quyền đọc và URL ký ngắn hạn |
+| Ảnh production | Supabase Storage hoặc R2 private; API kiểm tra quyền rồi cấp URL ký ngắn hạn |
 | App Android/iOS | Expo SDK 58; định danh Try-oh riêng, profile preview/production/simulator |
 | AI thật | Có adapter OpenRouter/Gemini; cần key/model khả dụng và kiểm tra bằng ảnh thật |
 | Phát hành store | Có workflow build/submit; chưa có binary ký hoặc lần submit được xác nhận |
-| Public backend | Cần cấu hình tài khoản dịch vụ; workflow bỏ qua deploy khi chưa bật |
+| Public backend | Render + Supabase; cần cấu hình DATABASE_URL và Supabase server key trước khi chạy |
 
 Mock chỉ phục vụ kiểm tra luồng ứng dụng, không mô phỏng chất lượng thử đồ. Ảnh AI không chứng minh quần áo vừa kích cỡ thực tế.
 
@@ -45,7 +45,7 @@ Trên macOS/Linux, thay Copy-Item bằng cp.
 docker compose up --build
 ~~~
 
-compose.yaml chạy prototype mock, bind vào máy local và giữ SQLite/ảnh bằng named volume. Chế độ này dùng ALLOW_LOCAL_BACKENDS=true có chủ đích; production dùng Supabase + R2.
+compose.yaml chạy prototype mock, bind vào máy local và giữ SQLite/ảnh bằng named volume. Chế độ này dùng ALLOW_LOCAL_BACKENDS=true có chủ đích; production dùng Supabase Auth/PostgreSQL và Supabase Storage private (hoặc R2).
 
 ## Kiểm thử và build
 

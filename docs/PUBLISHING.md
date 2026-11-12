@@ -2,14 +2,32 @@
 
 Mã đã có cấu hình build/deploy. Việc có workflow hoặc bundle JavaScript không có nghĩa ứng dụng đã được ký, gửi hoặc duyệt trên cửa hàng.
 
-## Backend: Render + Supabase + R2
+## Backend: Render + Supabase
 
-1. Tạo project Supabase và bucket R2 private của riêng bạn.
-2. Cấu hình biến server theo .env.production.example. Service-role key, DATABASE_URL, R2 secret và AI key chỉ đặt ở backend/GitHub Secrets.
-3. Tạo dịch vụ Render từ repo hdwc-151/Try-oh và render.yaml. Tên dịch vụ dự kiến try-oh; URL thực tế do Render cấp. Không giả định một domain đã thuộc về bạn.
-4. Giữ Auto Deploy = Off. Workflow sẽ migrate trước, rồi yêu cầu deploy đúng commit đã vượt CI.
-5. Cấu hình Auth redirect trên Supabase: URL web thật cho recovery, tryoh://auth-callback và tryoh://reset-password. Google Web OAuth callback là BACKEND_URL/api/auth/oauth/callback; cấu hình cùng Client ID với Supabase nếu bật.
-6. Sau khi tạo database, build và chạy migration trước lần khởi động backend đầu tiên. Bản free không dựa vào pre-deploy command của Render; có thể chạy từ máy operator hoặc workflow.
+Ngày 12/11/2026 đã tạo schema trong project Supabase `tapzevmhoqnytdkbsing`: 29 bảng đều bật RLS, migration 001–012 có checksum trong `tryoh_schema_migrations`. Migration 012 thu hồi quyền gọi RPC của hai trigger nội bộ, tối ưu policy thanh toán và bổ sung ba index khóa ngoại. Không sửa 001–011 đã áp dụng.
+
+Cấu hình mặc định hiện dùng Supabase cho Auth, PostgreSQL và ảnh private; Render chạy web/API. `IMAGE_PROVIDER=mock` chỉ kiểm tra luồng sản phẩm. Muốn dùng AI thật, thêm key ở backend và chọn provider sau khi kiểm tra ảnh thật.
+
+### Hai giá trị riêng tư còn cần điền trong Render Environment
+
+| Biến server | Lấy từ Supabase |
+| --- | --- |
+| `DATABASE_URL` | Nút **Connect → Session pooler**, kèm database password. Giữ xác minh TLS; dùng `sslmode=verify-full`. Nếu cần CA riêng, thêm `DATABASE_CA_CERT_BASE64`. |
+| `SUPABASE_SECRET_KEY` | **Project Settings → API Keys → Secret keys**, khóa `sb_secret_...`. Có thể dùng legacy service-role key trong `SUPABASE_SERVICE_ROLE_KEY` thay thế. |
+
+Không gửi hai giá trị trên trong chat, không commit vào repo và không dùng tiền tố `VITE_` hoặc `EXPO_PUBLIC_`. Publishable key là khóa khác, không thay được server key.
+
+Khi khởi động thành công lần đầu, backend tạo bucket `tryoh-private` bằng Storage API với giới hạn 8 MB, MIME JPEG/PNG/WebP và `public=false`. Nếu bucket đã tồn tại nhưng đang public, backend dừng để operator sửa quyền; không tự mở quyền bucket. Mỗi object có UUID, không ghi đè; URL ảnh phải qua API kiểm tra quyền trước khi ký 60–3600 giây. Yêu cầu xóa ảnh thất bại được giữ lại trong cleanup queue.
+
+Sau khi lưu Environment, chọn **Manual Deploy → Deploy latest commit** (Auto Deploy đang tắt). Đặt health check trong Render Settings là `/api/health`, xác minh response có `ready=true` và revision đúng SHA đã vượt CI. HTTP 200 của bản cũ không chứng minh bản mới đã deploy.
+
+Trong Supabase Auth URL Configuration, đặt Site URL theo URL Render thực tế; thêm recovery URL web, `tryoh://auth-callback` và `tryoh://reset-password` theo luồng app. Không tắt email confirmation chỉ để vượt kiểm thử.
+
+Gói Render Free dùng cho prototype, có thời gian khởi động lại khi nhàn rỗi. Ảnh và dữ liệu nằm ở Supabase để không phụ thuộc ổ đĩa tạm của Render.
+
+### Tùy chọn R2
+
+Adapter R2 vẫn được giữ. Nếu có bucket R2 private, đặt `IMAGE_STORAGE=r2` rồi điền bốn biến `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`. Không cần R2 để triển khai cấu hình Supabase ở trên.
 
 ### GitHub Settings → Secrets and variables → Actions
 

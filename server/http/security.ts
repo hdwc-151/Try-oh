@@ -15,7 +15,8 @@ const trustedImageOrigins = (): string[] => {
     // Path-style endpoint, kept for clients configured with forcePathStyle.
     origins.add(`https://${accountId}.r2.cloudflarestorage.com`)
   }
-  const publicUrl = process.env.R2_PUBLIC_URL?.trim()
+  const publicUrl = process.env.IMAGE_STORAGE === 'supabase'
+    ? process.env.SUPABASE_URL?.trim() : process.env.R2_PUBLIC_URL?.trim()
   if (publicUrl) {
     try {
       const parsed = new URL(publicUrl)

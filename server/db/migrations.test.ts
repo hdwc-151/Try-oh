@@ -27,3 +27,16 @@ it('rolls back the whole release when any migration fails', async () => {
     expect((await db.pool.query("select to_regclass('public.rollback_probe') as name")).rows[0]?.name).toBeNull()
   } finally { await db.close() }
 })
+
+it('keeps internal trigger RPCs inaccessible while signup triggers still work', async () => {
+  const db = await createTestDatabase()
+  try {
+    const permissions = await db.pool.query(`select
+      has_function_privilege('anon', 'public.handle_new_auth_user()', 'EXECUTE') as anon_signup,
+      has_function_privilege('authenticated', 'public.anonymize_payment_orders_before_profile_delete()', 'EXECUTE') as user_anonymize`)
+    expect(permissions.rows[0]).toEqual({ anon_signup: false, user_anonymize: false })
+    const id = '11111111-1111-4111-8111-111111111111'
+    await db.createUser(id, 'test@example.com', 'Test User')
+    expect((await db.pool.query('select display_name from public.profiles where id=$1', [id])).rows[0]?.display_name).toBe('Test User')
+  } finally { await db.close() }
+})

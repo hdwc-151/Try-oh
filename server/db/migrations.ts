@@ -20,6 +20,7 @@ export async function applyMigrations(pool: PostgresPool, migrations: Migration[
     // Transaction-scoped lock works through Supabase's transaction pooler.
     await client.query('SELECT pg_advisory_xact_lock(785310261)')
     await client.query('CREATE TABLE IF NOT EXISTS public.tryoh_schema_migrations (name text PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())')
+    await client.query('ALTER TABLE public.tryoh_schema_migrations ENABLE ROW LEVEL SECURITY')
     await client.query('REVOKE ALL ON public.tryoh_schema_migrations FROM anon, authenticated')
     const current = await client.query('SELECT name, checksum FROM public.tryoh_schema_migrations')
     const recorded = new Map(current.rows.map(row => [row.name as string, row.checksum as string]))

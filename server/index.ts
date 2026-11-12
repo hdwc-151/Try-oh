@@ -15,6 +15,7 @@ import { PostgresGarmentRepository } from './storage/postgres-garment-repository
 import { PostgresUserDataRepository } from './storage/postgres-user-data-repository.js'
 import { createPostgresPool, type PostgresPool } from './storage/postgres.js'
 import { R2ImageStorage } from './storage/r2-image-storage.js'
+import { SupabaseImageStorage } from './storage/supabase-image-storage.js'
 import { createImageProvider } from './providers/provider-factory.js'
 import { AuthStore } from './auth/auth-store.js'
 import { AuthService } from './auth/auth-service.js'
@@ -61,6 +62,7 @@ const uploadDirectory = path.join(dataDirectory, 'uploads')
 const persistenceBackend = process.env.PERSISTENCE_BACKEND ?? 'sqlite'
 const imageStorageBackend = process.env.IMAGE_STORAGE ?? 'local'
 const authBackend = process.env.AUTH_BACKEND ?? 'local'
+const supabaseServerKey = process.env.SUPABASE_SECRET_KEY?.trim() || process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
 const appBaseUrl = runtimeConfig.appBaseUrl
 
 // Local-only backends lose data on every deploy and cannot be shared between
@@ -72,11 +74,20 @@ if (process.env.NODE_ENV === 'production' && !isDevelopment && process.env.ALLOW
     imageStorageBackend === 'local' ? 'IMAGE_STORAGE=local' : null,
   ].filter(Boolean)
   if (localBackends.length) {
-    throw new Error(`NODE_ENV=production nhưng đang cấu hình ${localBackends.join(', ')}. Dùng postgres/supabase/r2, hoặc đặt ALLOW_LOCAL_BACKENDS=true nếu cố ý.`)
+    throw new Error(`NODE_ENV=production nhưng đang cấu hình ${localBackends.join(', ')}. Dùng PostgreSQL, Supabase Auth và Supabase Storage hoặc R2, hoặc đặt ALLOW_LOCAL_BACKENDS=true nếu cố ý.`)
   }
-  if (authBackend === 'supabase' && !process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()) {
-    console.warn('[config] Thiếu SUPABASE_SERVICE_ROLE_KEY: người dùng sẽ không xoá được tài khoản.')
+  if (authBackend === 'supabase' && !supabaseServerKey) {
+    console.warn('[config] Thiếu SUPABASE_SECRET_KEY (hoặc legacy SUPABASE_SERVICE_ROLE_KEY): người dùng sẽ không xoá được tài khoản.')
   }
+}
+
+// Fail before initializing pools or serving traffic when deployment setup is incomplete.
+if (process.env.NODE_ENV === 'production' && process.env.ALLOW_LOCAL_BACKENDS !== 'true') {
+  const missing = [
+    persistenceBackend === 'postgres' && !process.env.DATABASE_URL?.trim() ? 'DATABASE_URL' : null,
+    imageStorageBackend === 'supabase' && !supabaseServerKey ? 'SUPABASE_SECRET_KEY' : null,
+  ].filter(Boolean)
+  if (missing.length) throw new Error('Missing production environment variables: ' + missing.join(', ') + '. Configure these privately in Render Environment.')
 }
 
 // The Google button simply disappears when it cannot work, which is hard to debug:
@@ -124,6 +135,16 @@ if (imageStorageBackend === 'r2') {
   })
   console.log('[r2] Signed browser redirects are enabled; image bytes bypass the web service.')
   imageStorage = r2Storage
+} else if (imageStorageBackend === 'supabase') {
+  const supabaseStorage = new SupabaseImageStorage({
+    url: process.env.SUPABASE_URL ?? '',
+    secretKey: supabaseServerKey ?? '',
+    bucket: process.env.SUPABASE_STORAGE_BUCKET,
+    prefix: process.env.SUPABASE_STORAGE_PREFIX,
+  })
+  await supabaseStorage.ensureReady()
+  imageStorage = supabaseStorage
+  console.info('[storage] Private Supabase bucket ready; authenticated signed reads enabled.')
 } else if (imageStorageBackend === 'local') {
   await mkdir(dataDirectory, { recursive: true })
   const localStorage = new LocalImageStorage(uploadDirectory)
@@ -138,7 +159,7 @@ if (authBackend === 'supabase') {
     process.env.SUPABASE_URL ?? '',
     process.env.SUPABASE_PUBLISHABLE_KEY ?? process.env.SUPABASE_ANON_KEY ?? '',
     appBaseUrl,
-    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    supabaseServerKey,
   )
 } else if (authBackend === 'local') {
   if (persistenceBackend !== 'sqlite') {
