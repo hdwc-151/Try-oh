@@ -1,0 +1,73 @@
+name: Verify hosted Try-oh browser demo
+
+on:
+  push:
+    branches: [verify/render-browser-demo]
+    paths: [.github/workflows/verify-render-browser-demo.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DEMO_URL: https://try-oh-demo.onrender.com
+      EXPECTED_REVISION: '6352080d7f7a7a831f53026ee18ad99f00795ec1'
+    steps:
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24'
+      - name: Install browser
+        run: |
+          npm install --prefix "$RUNNER_TEMP/tryoh-preview-probe" --no-save --package-lock=false playwright@1.65.0
+          "$RUNNER_TEMP/tryoh-preview-probe/node_modules/.bin/playwright" install chromium
+      - name: Verify public HTTPS, exact revision and entry into the demo
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import { setTimeout } from 'node:timers/promises'
+          import { pathToFileURL } from 'node:url'
+
+          const origin = process.env.DEMO_URL
+          const revision = process.env.EXPECTED_REVISION
+          const deadline = Date.now() + 240_000
+          let ready = false
+          while (Date.now() < deadline && !ready) {
+            try {
+              const response = await fetch(origin + '/api/health', { signal: AbortSignal.timeout(8000) })
+              const health = response.ok ? await response.json() : null
+              ready = health?.ready === true && health.revision === revision
+            } catch {
+              // The web service can be starting up.
+            }
+            if (!ready) await setTimeout(3000)
+          }
+          assert(ready, 'Expected the deployed commit to return ready=true on HTTPS.')
+          console.info('Public health check verified at expected revision.')
+
+          const modulePath = process.env.RUNNER_TEMP + '/tryoh-preview-probe/node_modules/playwright/index.mjs'
+          const { chromium } = await import(pathToFileURL(modulePath))
+          const browser = await chromium.launch()
+          try {
+            const page = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
+            await page.goto(origin + '/', { waitUntil: 'domcontentloaded', timeout: 25_000 })
+            const title = page.getByRole('heading', { name: 'Phòng thử Try-oh', exact: true })
+            await title.waitFor({ state: 'visible', timeout: 25_000 })
+
+            const registration = page.waitForResponse(response =>
+              new URL(response.url()).pathname === '/api/auth/register' && response.request().method() === 'POST',
+            )
+            await page.getByRole('button', { name: 'Vào demo', exact: true }).click()
+            const created = await registration
+            assert(created.ok(), 'Starting the browser demo must create a test session.')
+            await title.waitFor({ state: 'hidden', timeout: 20_000 })
+            const response = await page.request.get(origin + '/api/auth/me')
+            const body = await response.json()
+            assert(response.ok() && body.user?.email?.endsWith('@example.invalid'), 'Demo used an invalid test session.')
+            console.info('One-click entry on a mobile viewport produced a temporary authenticated session.')
+          } finally {
+            await browser.close()
+          }
+          NODE
