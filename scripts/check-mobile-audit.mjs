@@ -18,10 +18,11 @@ if (!severe.length) {
 // their graph and verify that the flagged package stays out of the native bundles.
 const advisory = 'https://github.com/advisories/GHSA-fc5q-39xc-vjpf'
 const causes = (name, seen = new Set()) => {
+  if (seen.has(name)) return []
+  seen.add(name)
   const issue = report.vulnerabilities[name]
-  assert(issue?.via.length && !seen.has(name), 'Cannot trace the audit advisory for ' + name)
-  const chain = new Set(seen).add(name)
-  return issue.via.flatMap(via => typeof via === 'string' ? causes(via, chain) : [via])
+  assert(issue?.via.length, 'Cannot trace the audit advisory for ' + name)
+  return issue.via.flatMap(via => typeof via === 'string' ? causes(via, seen) : [via])
 }
 const blocked = severe.filter(issue => {
   const securityAdvisories = causes(issue.name).filter(({ severity }) => severity === 'critical' || severity === 'high')
