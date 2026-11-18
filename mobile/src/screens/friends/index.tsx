@@ -1,9 +1,11 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
-import { ActivityIndicator, RefreshControl, ScrollView, TextInput, View } from 'react-native';
+import { router } from 'expo-router';
+import { ActivityIndicator, Pressable, RefreshControl, TextInput, View } from 'react-native';
 import { useState } from 'react';
 import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 
+import { KeyboardScrollView } from '@/components/keyboard-scroll-view';
 import { AppText } from '@/components/app-text';
 import { AppIcon } from '@/components/icon';
 import { Notice } from '@/components/notice';
@@ -62,7 +64,6 @@ export function FriendsScreen() {
   if (query.data === undefined) return <ScreenLoading variant="list" label="Đang tải bạn bè…"/>;
 
   const data = query.data;
-  const unread = data.notifications.filter((item) => !item.read).length;
   const act = (actionName: SocialAction['action'], body: Record<string, unknown>) => {
     action.mutate({ action: actionName, body });
   };
@@ -70,6 +71,8 @@ export function FriendsScreen() {
     const body = { id, decision };
     return { busy: isBusy(body), disabled: action.isPending, onPress: () => act('request-response', body) };
   };
+
+  const openProfile = (person: SocialPerson) => router.push({ pathname: '/user/[id]', params: { id: person.id } });
 
   const searchAction = (person: SocialPerson) => {
     if (data.friends.some((item) => item.id === person.id)) {
@@ -88,22 +91,11 @@ export function FriendsScreen() {
   };
 
   return (
-    <ScrollView
+    <KeyboardScrollView
       contentInsetAdjustmentBehavior="automatic"
       keyboardShouldPersistTaps="handled"
       refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={() => void query.refetch()} tintColor={brand.primary}/>}
       contentContainerStyle={{ padding: spacing.md, paddingBottom: spacing.xxl, gap: spacing.md }}>
-      <View style={{ gap: spacing.sm, padding: spacing.lg, borderRadius: radius.xl, borderCurve: 'continuous', backgroundColor: brand.secondary }}>
-        <AppText variant="title">Kết nối cùng gu</AppText>
-        <AppText variant="subhead">
-          {data.incoming.length
-            ? data.incoming.length + ' lời mời đang chờ'
-            : unread
-              ? unread + ' thông báo mới'
-              : data.friends.length + ' bạn bè'}
-        </AppText>
-      </View>
-
       <Section title="Tìm bạn bè">
         <View style={{ flexDirection: 'row', gap: spacing.sm }}>
           <TextInput
@@ -127,7 +119,16 @@ export function FriendsScreen() {
               fontSize: 16,
             }}
           />
-          {search.length > 0 && <SmallAction label="Xoá" secondary onPress={() => setSearch('')}/>}
+          {search.length > 0
+            ? <SmallAction label="Xoá" secondary onPress={() => setSearch('')}/>
+            : <PressableScale
+                accessibilityRole="button"
+                accessibilityLabel="Quét mã QR để kết bạn"
+                onPress={() => router.push('/scan')}
+                scaleTo={0.94}
+                style={{ width: 48, height: 48, alignItems: 'center', justifyContent: 'center', borderRadius: radius.lg, backgroundColor: brand.primary }}>
+                <AppIcon name="qr" size={22} color={colors.onBrand}/>
+              </PressableScale>}
         </View>
         {typedSearch.length === 1 && <AppText variant="caption">Nhập ít nhất 2 ký tự để tìm.</AppText>}
         {searching && !searchQuery.data && <View style={{ padding: spacing.md, alignItems: 'center' }}><ActivityIndicator color={colors.label}/></View>}
@@ -138,7 +139,7 @@ export function FriendsScreen() {
         {showResults && <View style={{ opacity: searching && searchQuery.data ? 0.55 : 1 }}>
           {searchQuery.data?.map((person) => (
             <Animated.View key={person.id} entering={FadeIn.duration(180)} exiting={FadeOut.duration(120)}>
-              <PersonRow person={person} accessToken={session?.access_token} action={searchAction(person)}/>
+              <PersonRow person={person} accessToken={session?.access_token} action={searchAction(person)} onPress={() => openProfile(person)}/>
             </Animated.View>
           ))}
         </View>}
@@ -150,6 +151,7 @@ export function FriendsScreen() {
             <Animated.View key={request.id} entering={FadeIn.duration(200)} exiting={FadeOut.duration(150)} layout={LinearTransition.duration(200)}>
               <PersonRow
                 person={request.from}
+                onPress={() => openProfile(request.from)}
                 accessToken={session?.access_token}
                 action={<View style={{ flexDirection: 'row', gap: spacing.xs }}>
                   <SmallAction label="Nhận" {...respond(request.id, 'accept')}/>
@@ -167,6 +169,7 @@ export function FriendsScreen() {
             <Animated.View key={request.id} entering={FadeIn.duration(200)} exiting={FadeOut.duration(150)} layout={LinearTransition.duration(200)}>
               <PersonRow
                 person={request.to}
+                onPress={() => openProfile(request.to)}
                 accessToken={session?.access_token}
                 action={<SmallAction label="Huỷ" secondary {...respond(request.id, 'cancel')}/>}
               />
@@ -184,11 +187,11 @@ export function FriendsScreen() {
             <AppText variant="headline">Chưa có bạn bè</AppText>
             <AppText variant="subhead" style={{ textAlign: 'center' }}>Tìm người dùng phía trên để gửi lời mời kết bạn.</AppText>
           </View>
-          : data.friends.map((person) => <Animated.View key={person.id} entering={FadeIn.duration(200)} layout={LinearTransition.duration(200)}><PersonRow person={person} accessToken={session?.access_token}/></Animated.View>)}
+          : data.friends.map((person) => <Animated.View key={person.id} entering={FadeIn.duration(200)} layout={LinearTransition.duration(200)}><PersonRow person={person} accessToken={session?.access_token} onPress={() => openProfile(person)}/></Animated.View>)}
       </Section>
 
       {action.error && <Notice tone="error" text={action.error instanceof Error ? action.error.message : 'Không thể thực hiện thao tác.'} />}
-    </ScrollView>
+    </KeyboardScrollView>
   );
 }
 
@@ -205,11 +208,12 @@ function initials(name: string) {
   return letters.toUpperCase();
 }
 
-function PersonRow({ person, accessToken, action }: { person: SocialPerson; accessToken?: string; action?: React.ReactNode }) {
+function PersonRow({ person, accessToken, action, onPress }: { person: SocialPerson; accessToken?: string; action?: React.ReactNode; onPress?: () => void }) {
   const brand = useBrandColors();
   return <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm }}>
+    <Pressable accessibilityRole="button" accessibilityLabel={'Xem trang cá nhân ' + person.name} disabled={!onPress} onPress={onPress} style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
     {person.avatar
-      ? <Image source={protectedImageSource(person.avatar, accessToken)} recyclingKey={person.id} style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: colors.groupedBackground }} contentFit="cover" transition={200}/>
+      ? <Image source={protectedImageSource(person.avatar, accessToken, 160)} recyclingKey={person.id} style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: colors.groupedBackground }} contentFit="cover" transition={200}/>
       : <View accessibilityElementsHidden style={{ width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', backgroundColor: brand.secondary }}>
           <AppText selectable={false} variant="headline" style={{ fontSize: 16, color: brand.primary }}>{initials(person.name)}</AppText>
         </View>}
@@ -217,6 +221,7 @@ function PersonRow({ person, accessToken, action }: { person: SocialPerson; acce
       <AppText variant="headline" numberOfLines={1}>{person.name}</AppText>
       <AppText variant="caption" numberOfLines={1}>@{person.username}</AppText>
     </View>
+    </Pressable>
     {action}
   </View>;
 }

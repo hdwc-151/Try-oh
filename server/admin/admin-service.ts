@@ -18,6 +18,7 @@ export class AdminService{
   // image request resolves the user, so this removes one query per request. Role and
   // suspension changes made on another instance take effect within the TTL.
   private readonly cache=new Map<string,CachedUser>()
+  private readonly inflight=new Map<string,Promise<AdminUser>>()
   constructor(private readonly repository:AdminRepository,adminEmails:string[],private readonly cacheTtlMs=30_000){
     this.bootstrapAdmins=new Set(adminEmails.map(email=>email.trim().toLowerCase()).filter(Boolean))
   }
@@ -31,7 +32,15 @@ export class AdminService{
     // app_metadata is controlled by the trusted Supabase side. Email alone must never
     // elevate a newly registered account, especially when email confirmation is disabled.
     const trustedBootstrap=user.role==='admin'&&this.bootstrapAdmins.has(user.email.toLowerCase())
-    const resolved=await this.repository.syncUser(user,trustedBootstrap)
+    // Mở app bắn 5–6 request song song; khi cache hết hạn, chúng dùng chung một lần đồng bộ
+    // thay vì mỗi request một câu INSERT … ON CONFLICT (đo tải: giảm ~3 lần số câu này).
+    const inflightKey=`${user.id}|${fingerprint}`
+    let pending=this.inflight.get(inflightKey)
+    if(!pending){
+      pending=Promise.resolve(this.repository.syncUser(user,trustedBootstrap)).finally(()=>this.inflight.delete(inflightKey))
+      this.inflight.set(inflightKey,pending)
+    }
+    const resolved=await pending
     const result:PublicUser={id:resolved.id,email:resolved.email,displayName:resolved.displayName,createdAt:resolved.createdAt,role:resolved.role,status:resolved.status,...(user.hasPassword===undefined?{}:{hasPassword:user.hasPassword})}
     if(this.cacheTtlMs>0){
       if(this.cache.size>=20_000)this.cache.delete(this.cache.keys().next().value as string)

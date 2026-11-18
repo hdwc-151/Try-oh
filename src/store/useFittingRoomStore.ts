@@ -22,6 +22,7 @@ type FittingRoomState = {
   privacyConsent: boolean
   preservePoseFront: boolean
   preservePoseBack: boolean
+  keepBackground: boolean
   setActiveCategory: (category: GarmentCategory) => void
   setGarments: (garments: Garment[]) => void
   addGarment: (garment: Garment) => void
@@ -36,6 +37,7 @@ type FittingRoomState = {
   setPrivacyConsent: (consent: boolean) => void
   setPreservePoseFront: (preserve: boolean) => void
   setPreservePoseBack: (preserve: boolean) => void
+  setKeepBackground: (keep: boolean) => void
   clearUserData: () => void
   resetWorkspace: () => void
 }
@@ -50,6 +52,7 @@ export const useFittingRoomStore = create<FittingRoomState>((set) => ({
   privacyConsent: false,
   preservePoseFront: true,
   preservePoseBack: true,
+  keepBackground: false,
   setActiveCategory: (activeCategory) => set({ activeCategory }),
   setGarments: (garments) => set({ garments }),
   addGarment: (garment) =>
@@ -144,6 +147,7 @@ export const useFittingRoomStore = create<FittingRoomState>((set) => ({
   setPrivacyConsent: (privacyConsent) => set({ privacyConsent }),
   setPreservePoseFront: (preservePoseFront) => set({ preservePoseFront }),
   setPreservePoseBack: (preservePoseBack) => set({ preservePoseBack }),
+  setKeepBackground: (keepBackground) => set({ keepBackground }),
   clearUserData: () => set({ personImage: null, privacyConsent: false }),
   resetWorkspace: () => set({
     activeCategory: 'tops',
@@ -155,5 +159,6 @@ export const useFittingRoomStore = create<FittingRoomState>((set) => ({
     privacyConsent: false,
     preservePoseFront: true,
     preservePoseBack: true,
+    keepBackground: false,
   }),
 }))

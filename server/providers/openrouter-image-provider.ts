@@ -3,7 +3,7 @@ import type { ImageStorage } from '../storage/image-storage.js'
 import type { GenerateImageInput, GeneratedImage, ImageProvider } from './image-provider.js'
 import { ImageProviderError } from './image-provider-error.js'
 import { ReferenceImageEncoder } from '../services/reference-image-encoder.js'
-import { AiQueueBusyError, aiImageSemaphore } from '../services/ai-concurrency.js'
+import { AiQueueBusyError, aiImageSemaphore } from './ai-concurrency.js'
 
 const OPENROUTER_IMAGE_API_URL = 'https://openrouter.ai/api/v1/images'
 const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
@@ -201,6 +201,7 @@ export class OpenRouterImageProvider implements ImageProvider {
             hasReferenceImage: Boolean(input.referenceImageUrl),
             garments: input.garments,
             preservePose: input.preservePose,
+            keepBackground: input.keepBackground,
           }),
           input_references: images.map((image) => ({
             type: 'image_url',

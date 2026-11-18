@@ -44,7 +44,7 @@ describe('PostgresSocialStore', () => {
     const person = (await social.profile(U.bob, U.alice)).person
     expect(person).not.toHaveProperty('birthDate'); expect(person).not.toHaveProperty('inviteCode')
     expect((await social.profile(U.bob, U.alice)).outfits).toHaveLength(0)
-    await expect(social.profile(U.outsider, U.alice)).rejects.toThrow()
+    expect((await social.profile(U.outsider, U.alice)).locked).toBe(true)
   })
 
   it('applies the profile default visibility only when an outfit has no explicit policy', async () => {
@@ -183,6 +183,81 @@ describe('PostgresSocialStore', () => {
     expect(created.outfits.map(item => item.frontImageUrl)).toEqual(['/uploads/a.webp', '/uploads/b.webp'])
     expect(await social.canReadImage(U.bob, 'a.webp')).toBe(true)
     expect(await social.canReadImage(U.outsider, 'a.webp')).toBe(false)
+  })
+
+  it('lists followers for creators and following for users, and lets creators remove followers', async () => {
+    await social.act(U.alice, 'follow', { targetId: U.creator })
+    await social.act(U.bob, 'follow', { targetId: U.creator })
+    expect((await social.snapshot(U.alice)).following.map(person => person.id)).toEqual([U.creator])
+    expect((await social.snapshot(U.creator)).followerCount).toBe(2)
+    expect((await social.followers(U.creator, 0, 30)).items.map(person => person.id).sort()).toEqual([U.alice, U.bob].sort())
+    const firstPage = await social.followers(U.creator, 0, 1)
+    expect(firstPage.items).toHaveLength(1); expect(firstPage.total).toBe(2); expect(firstPage.nextOffset).toBe(1)
+    expect((await social.snapshot(U.alice)).followerCount).toBe(0)
+    await social.act(U.creator, 'remove-follower', { targetId: U.bob })
+    expect((await social.followers(U.creator, 0, 30)).items.map(person => person.id)).toEqual([U.alice])
+    expect((await social.snapshot(U.bob)).following).toEqual([])
+    await expect(social.act(U.creator, 'remove-follower', { targetId: U.bob })).rejects.toThrow()
+  })
+
+  it('opens creator profiles publicly while keeping regular profiles friends-only', async () => {
+    await social.act(U.creator, 'post-create', { imageUrls: ['/uploads/look.webp'], caption: 'Look mới', visibility: 'public', groupIds: [] })
+    await social.act(U.alice, 'follow', { targetId: U.creator })
+    const view = await social.profile(U.outsider, U.creator)
+    expect(view.person.creator).toBe(true)
+    expect(view.followerCount).toBe(1)
+    expect(view.following).toBe(false)
+    expect(view.posts.map(post => post.caption)).toEqual(['Look mới'])
+    expect((await social.profile(U.alice, U.creator)).following).toBe(true)
+    expect((await social.profile(U.outsider, U.alice)).locked).toBe(true)
+    await social.act(U.outsider, 'block', { targetId: U.creator })
+    await expect(social.profile(U.outsider, U.creator)).rejects.toThrow()
+  })
+
+  it('gates regular profiles by the owner setting and returns a locked view instead of 404', async () => {
+    const locked = await social.profile(U.outsider, U.alice)
+    expect(locked.locked).toBe(true)
+    expect(locked.outfits).toEqual([]); expect(locked.polls).toEqual([])
+    await social.act(U.alice, 'settings', { username: 'alice_style', invitePolicy: 'known', profileVisibility: 'everyone' })
+    expect((await social.snapshot(U.alice)).me.profileVisibility).toBe('everyone')
+    expect((await social.profile(U.outsider, U.alice)).locked).toBe(false)
+    await social.act(U.alice, 'settings', { username: 'alice_style', invitePolicy: 'known', profileVisibility: 'private' })
+    await connect('alice', 'bob')
+    expect((await social.profile(U.bob, U.alice)).locked).toBe(true)
+    expect((await social.profile(U.alice, U.alice)).locked).toBe(false)
+    await expect(social.act(U.alice, 'settings', { username: 'alice_style', invitePolicy: 'known', profileVisibility: 'world' })).rejects.toThrow()
+  })
+
+  it('creates outfit polls for an audience with 1–24 hour limits and shows them on the profile', async () => {
+    await connect('alice', 'bob'); await connect('alice', 'carol')
+    const base = { outfitIds: [OUTFIT.one, OUTFIT.two], title: 'Ghi chú' }
+    const except = await social.act(U.alice, 'poll-create', { ...base, audience: 'friends_except', excludedIds: [U.carol], hours: 3 })
+    const poll = except.polls.find(item => item.title === 'Ghi chú')!
+    expect(poll.recipients.map(person => person.id)).toEqual([U.bob])
+    expect(poll.expiresAt - poll.createdAt).toBeGreaterThan(3 * 3600000 - 5000)
+    expect((await social.profile(U.bob, U.alice)).polls.map(item => item.id)).toEqual([poll.id])
+    expect((await social.profile(U.carol, U.alice)).polls).toEqual([])
+    const defaulted = await social.act(U.alice, 'poll-create', { ...base, title: 'Mặc định', audience: 'friends' })
+    const day = defaulted.polls.find(item => item.title === 'Mặc định')!
+    expect(Math.round((day.expiresAt - day.createdAt) / 3600000)).toBe(24)
+    expect(day.recipients.map(person => person.id).sort()).toEqual([U.bob, U.carol].sort())
+    await expect(social.act(U.alice, 'poll-create', { ...base, audience: 'friends', hours: 72 })).rejects.toThrow()
+    await expect(social.act(U.alice, 'poll-create', { ...base, audience: 'specific', recipientIds: [U.outsider] })).rejects.toThrow()
+    await expect(social.act(U.alice, 'poll-create', { outfitIds: [OUTFIT.one], audience: 'friends' })).rejects.toThrow()
+  })
+
+  it('sends public outfit polls to followers of a creator, who can vote and see the outfits', async () => {
+    for (const [key, id] of Object.entries({ c1: 'aaaaaaaa-0000-4000-8000-0000000000c1', c2: 'aaaaaaaa-0000-4000-8000-0000000000c2' })) {
+      await test.db.query('insert into saved_outfits(id,user_id,front_image_url,front_image_key) values($1,$2,$3,$4)', [id, U.creator, `/uploads/${key}.png`, `${key}.png`])
+    }
+    await social.act(U.outsider, 'follow', { targetId: U.creator })
+    const created = await social.act(U.creator, 'poll-create', { outfitIds: ['aaaaaaaa-0000-4000-8000-0000000000c1', 'aaaaaaaa-0000-4000-8000-0000000000c2'], audience: 'public', hours: 2 })
+    const poll = created.polls[0]!
+    expect(poll.recipients.map(person => person.id)).toEqual([U.outsider])
+    expect(await social.canReadImage(U.outsider, 'c1.png')).toBe(true)
+    await social.act(U.outsider, 'vote', { id: poll.id, outfitId: 'aaaaaaaa-0000-4000-8000-0000000000c1' })
+    expect((await social.profile(U.outsider, U.creator)).polls[0]?.myVote).toBe('aaaaaaaa-0000-4000-8000-0000000000c1')
+    expect(await social.canReadImage(U.bob, 'c1.png')).toBe(false)
   })
 
   it('removes orphaned social data when an account is deleted', async () => {

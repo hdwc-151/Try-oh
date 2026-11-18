@@ -3,6 +3,7 @@ import type { AddressInfo } from 'node:net'
 import type { Server } from 'node:http'
 import express from 'express'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { runtimeConfig } from '../config/runtime-config.js'
 import type { AuthBackend, AuthResult } from './auth-backend.js'
 import { createAuthRouter, OAUTH_COOKIE, SESSION_COOKIE } from './auth-http.js'
 import { GoogleOAuth } from './google-oauth.js'
@@ -16,6 +17,9 @@ const result: AuthResult = {
 
 const redeemed: Array<{ code: string; verifier: string; redirectUri: string }> = []
 const identities: string[] = []
+
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 
 const googleFetch = (async (input: string | URL | Request, init?: RequestInit) => {
   const form = new URLSearchParams(String(init?.body))
@@ -157,6 +161,22 @@ describe('Google sign-in through our own domain', () => {
   it('refuses a mobile redirect the operator did not list', async () => {
     const response = await fetch(`${baseUrl}/api/auth/oauth/google?client=mobile&redirect=${encodeURIComponent('evil://steal')}`, { redirect: 'manual' })
     expect(response.status).toBe(400)
+  })
+
+  it('accepts an Expo Go address only while a wildcard entry is listed', async () => {
+    const expoGo = 'exp://192.168.1.5:8081/--/auth-callback'
+    const blocked = await fetch(`${baseUrl}/api/auth/oauth/google?client=mobile&redirect=${encodeURIComponent(expoGo)}`, { redirect: 'manual' })
+    expect(blocked.status).toBe(400)
+
+    const listed = runtimeConfig.mobileAuthRedirects
+    runtimeConfig.mobileAuthRedirects = [...listed, 'exp://*']
+    try {
+      const { state } = await start('?client=mobile&redirect=' + encodeURIComponent(expoGo))
+      const callback = await fetch(`${baseUrl}/api/auth/oauth/callback?code=good-code&state=${state}`, { redirect: 'manual' })
+      expect(callback.headers.get('location')).toContain(expoGo + '?fitsy_code=')
+    } finally {
+      runtimeConfig.mobileAuthRedirects = listed
+    }
   })
 
   it('sends the mobile app back with the reason when Google is cancelled', async () => {

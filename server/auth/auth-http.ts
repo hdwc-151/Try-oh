@@ -2,7 +2,7 @@ import type { NextFunction, Request, Response } from 'express'
 import { Router } from 'express'
 import type { AuthBackend, AuthResult } from './auth-backend.js'
 import type { GoogleOAuth } from './google-oauth.js'
-import { newBrowserSecret, OAuthStore } from './oauth-store.js'
+import { newBrowserSecret, OAuthStore, type OAuthStateStore } from './oauth-store.js'
 import { AuthError } from './auth-service.js'
 import type { PublicUser } from './auth-store.js'
 import type { MaybePromise } from '../storage/maybe-promise.js'
@@ -16,8 +16,15 @@ import {
 } from '../http/rate-limit.js'
 
 export const SESSION_COOKIE = 'fitting_room_session'
-export const REFRESH_COOKIE = 'fitting_room_refresh'
-/** Ties the browser that started a Google sign-in to the callback that finishes it. */
+const REFRESH_COOKIE = 'fitting_room_refresh'
+/** Social providers this build knows how to sign people in with. */
+const OAUTH_PROVIDER_NAMES = ['google'] as const
+type OAuthProviderName = typeof OAUTH_PROVIDER_NAMES[number]
+
+/** What a provider reports when the person said no, rather than something breaking. */
+const CANCELLED_BY_USER = new Set(['access_denied'])
+
+/** Ties the browser that started a social sign-in to the callback that finishes it. */
 export const OAUTH_COOKIE = 'fitting_room_oauth'
 const OAUTH_COOKIE_PATH = '/api/auth/oauth'
 const OAUTH_COOKIE_MAX_AGE_MS = 10 * 60 * 1000
@@ -29,9 +36,19 @@ const safeNextPath = (value: unknown): string => {
 }
 
 /** The app's own deep link, and only one this operator listed: never an arbitrary URL. */
+/**
+ * A listed entry may end in `*` so that Expo Go, whose address changes with the
+ * development machine's IP, can be allowed during development. Wildcards are dropped
+ * in production: whoever picks the address also receives the session hand-off code.
+ */
 const allowedMobileRedirect = (value: unknown): string | null => {
-  const requested = typeof value === 'string' && value ? value : (runtimeConfig.mobileAuthRedirects[0] ?? '')
-  return requested && runtimeConfig.mobileAuthRedirects.includes(requested) ? requested : null
+  const allowed = runtimeConfig.mobileAuthRedirects
+  const requested = typeof value === 'string' && value ? value : (allowed[0] ?? '')
+  if (!requested) return null
+  const permitted = allowed.some(entry => entry.endsWith('*')
+    ? requested.startsWith(entry.slice(0, -1))
+    : entry === requested)
+  return permitted ? requested : null
 }
 
 const withParam = (url: string, name: string, value: string) =>
@@ -119,6 +136,8 @@ export function createAuthRouter(
   rateLimits: RateLimitStore = new MemoryRateLimitStore(),
   deleteAccountData?: (user: PublicUser, token: string | null) => Promise<void>,
   google?: GoogleOAuth | null,
+  /** Shared store when running several instances; defaults to this process's memory. */
+  oauthStateStore?: OAuthStateStore,
 ) {
   const router = Router()
   const cookieOptions = { secure: secureCookies, sessionDays }
@@ -155,25 +174,44 @@ export function createAuthRouter(
     message: 'Bạn vừa yêu cầu gửi email. Vui lòng đợi khoảng một phút rồi thử lại.',
   })
 
-  const googleEnabled = Boolean(google && auth.signInWithIdToken)
-  const oauthStore = new OAuthStore()
+  /**
+   * One social provider, reduced to what the two routes below need. Each keeps its own
+   * callback path so the redirect URI registered with the provider stays exact.
+   */
+  type OAuthFlow = {
+    provider: OAuthProviderName
+    callbackPath: string
+    createVerifier(): string
+    authorizationUrl(state: string, codeVerifier: string): string
+    signIn(code: string, codeVerifier: string): Promise<AuthResult>
+  }
+
+  const flows: OAuthFlow[] = []
+  if (google && auth.signInWithIdToken) {
+    const signInWithIdToken = auth.signInWithIdToken.bind(auth)
+    flows.push({
+      provider: 'google',
+      callbackPath: '/oauth/callback',
+      createVerifier: () => google.createVerifier(),
+      authorizationUrl: (state, codeVerifier) => google.authorizationUrl(state, codeVerifier),
+      signIn: async (code, codeVerifier) => signInWithIdToken('google', await google.exchangeCode(code, codeVerifier)),
+    })
+  }
+  const enabled = (provider: OAuthProviderName) => flows.some(flow => flow.provider === provider)
+
+  const oauthStore: OAuthStateStore = oauthStateStore ?? new OAuthStore()
   const oauthCookieOptions = { httpOnly: true, sameSite: 'lax' as const, secure: secureCookies, path: OAUTH_COOKIE_PATH }
 
   router.get('/providers', (_request, response) => {
-    response.json({ google: googleEnabled })
+    response.json({ google: enabled('google') })
   })
 
   /**
-   * Google sign-in runs against Google directly from this server, so the account
-   * chooser names this site instead of the Supabase project host. The authorization
-   * code is redeemed server-side (PKCE + client secret) and the resulting ID token is
-   * traded for an application session.
+   * Social sign-in runs against the provider directly from this server, so its consent
+   * screen names this site instead of the Supabase project host. The authorization code
+   * is redeemed server-side (PKCE + the app secret) and traded for an application session.
    */
-  router.get('/oauth/google', loginIpLimit, (request, response) => {
-    if (!googleEnabled || !google) {
-      response.redirect(303, '/?auth_error=google_unavailable')
-      return
-    }
+  const beginSignIn = async (flow: OAuthFlow, request: Request, response: Response) => {
     const mobile = request.query.client === 'mobile'
     const redirectTo = mobile ? allowedMobileRedirect(request.query.redirect) : safeNextPath(request.query.next)
     if (!redirectTo) {
@@ -181,47 +219,49 @@ export function createAuthRouter(
       return
     }
     const browserSecret = mobile ? undefined : newBrowserSecret()
-    const codeVerifier = google.createVerifier()
-    const state = oauthStore.start({ codeVerifier, browserSecret, redirectTo, client: mobile ? 'mobile' : 'web' })
+    const codeVerifier = flow.createVerifier()
+    const state = await oauthStore.start({ codeVerifier, browserSecret, redirectTo, client: mobile ? 'mobile' : 'web' })
     if (browserSecret) {
       response.cookie(OAUTH_COOKIE, browserSecret, { ...oauthCookieOptions, maxAge: OAUTH_COOKIE_MAX_AGE_MS })
     }
-    response.redirect(302, google.authorizationUrl(state, codeVerifier))
-  })
+    response.redirect(302, flow.authorizationUrl(state, codeVerifier))
+  }
 
-  router.get('/oauth/callback', async (request, response, next) => {
-    const pending = oauthStore.finish(typeof request.query.state === 'string' ? request.query.state : null)
-    const fail = (reason: string) => {
+  const completeSignIn = async (flow: OAuthFlow, request: Request, response: Response, next: NextFunction) => {
+    let pending: Awaited<ReturnType<OAuthStateStore['finish']>> = null
+    const fail = (reason: 'cancelled' | 'expired' | 'failed') => {
+      const code = flow.provider + '_' + reason
       response.clearCookie(OAUTH_COOKIE, oauthCookieOptions)
-      if (pending?.client === 'mobile') response.redirect(303, withParam(pending.redirectTo, 'auth_error', reason))
-      else response.redirect(303, '/?auth_error=' + encodeURIComponent(reason))
+      if (pending?.client === 'mobile') response.redirect(303, withParam(pending.redirectTo, 'auth_error', code))
+      else response.redirect(303, '/?auth_error=' + encodeURIComponent(code))
     }
     try {
-      if (typeof request.query.error === 'string') {
-        fail(request.query.error === 'access_denied' ? 'google_cancelled' : 'google_failed')
+      pending = await oauthStore.finish(typeof request.query.state === 'string' ? request.query.state : null)
+      const providerError = typeof request.query.error === 'string' ? request.query.error : ''
+      if (providerError) {
+        fail(CANCELLED_BY_USER.has(providerError) ? 'cancelled' : 'failed')
         return
       }
       const code = typeof request.query.code === 'string' ? request.query.code : ''
       // A callback that did not start in this browser (or started too long ago) is dropped:
       // the state is single-use and the web flow also has to present the matching cookie.
       const sameBrowser = pending?.client === 'mobile' || (pending?.browserSecret && pending.browserSecret === readCookie(request, OAUTH_COOKIE))
-      if (!code || !pending || !sameBrowser || !google || !auth.signInWithIdToken) {
-        fail('google_expired')
+      if (!code || !pending || !sameBrowser) {
+        fail('expired')
         return
       }
       let result: AuthResult
       try {
-        const idToken = await google.exchangeCode(code, pending.codeVerifier)
-        result = await auth.signInWithIdToken('google', idToken)
+        result = await flow.signIn(code, pending.codeVerifier)
       } catch (error) {
-        console.warn('[auth.google] sign-in failed', error instanceof Error ? error.message : error)
-        fail('google_failed')
+        console.warn('[auth.oauth] sign-in failed', flow.provider, error instanceof Error ? error.message : error)
+        fail('failed')
         return
       }
       response.clearCookie(OAUTH_COOKIE, oauthCookieOptions)
       if (pending.client === 'mobile') {
         // The app collects the session once, over HTTPS, instead of reading it off the URL.
-        const handoff = oauthStore.holdSession({
+        const handoff = await oauthStore.holdSession({
           accessToken: result.token,
           refreshToken: result.refreshToken ?? '',
           expiresAt: result.expiresAt.getTime(),
@@ -234,16 +274,33 @@ export function createAuthRouter(
     } catch (error) {
       next(error)
     }
-  })
+  }
+
+  for (const flow of flows) {
+    router.get('/oauth/' + flow.provider, loginIpLimit, (request, response, next) => { beginSignIn(flow, request, response).catch(next) })
+    router.get(flow.callbackPath, (request, response, next) => completeSignIn(flow, request, response, next))
+  }
+  // A provider that is not configured answers instead of 404ing: the button is hidden,
+  // but bookmarks and already-loaded pages still point here.
+  for (const provider of OAUTH_PROVIDER_NAMES) {
+    if (enabled(provider)) continue
+    router.get('/oauth/' + provider, (_request, response) => {
+      response.redirect(303, '/?auth_error=' + provider + '_unavailable')
+    })
+  }
 
   /** Mobile only: trades the one-time hand-off code for the session it belongs to. */
-  router.post('/oauth/session', (request, response) => {
-    const session = oauthStore.claimSession(typeof request.body?.code === 'string' ? request.body.code : null)
-    if (!session) {
-      response.status(400).json({ message: 'Phiên đăng nhập Google đã hết hạn. Vui lòng thử lại.', code: 'oauth_code_expired' })
-      return
+  router.post('/oauth/session', async (request, response, next) => {
+    try {
+      const session = await oauthStore.claimSession(typeof request.body?.code === 'string' ? request.body.code : null)
+      if (!session) {
+        response.status(400).json({ message: 'Phiên đăng nhập đã hết hạn. Vui lòng thử lại.', code: 'oauth_code_expired' })
+        return
+      }
+      response.json(session)
+    } catch (error) {
+      next(error)
     }
-    response.json(session)
   })
 
   router.post('/register', registerLimit, async (request, response, next) => {

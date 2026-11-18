@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'integrate/**']
   pull_request:
   workflow_dispatch:
 
@@ -66,17 +66,23 @@ jobs:
           cache: npm
           cache-dependency-path: mobile/package-lock.json
       - run: npm ci
-      - run: npm audit --omit=dev --audit-level=high
       - run: npm run check
       - run: npx expo config --type public --json > /tmp/tryoh-expo-config.json
-      - run: npx expo export --platform ios --output-dir dist-ios
-      - run: npx expo export --platform android --output-dir dist-android
+      - run: npx expo export --platform ios --dump-sourcemap --output-dir dist-ios
+      - run: npx expo export --platform android --dump-sourcemap --output-dir dist-android
+      - name: Audit mobile dependencies against native exports
+        run: |
+          audit_status=0
+          npm audit --omit=dev --audit-level=high --json > "$RUNNER_TEMP/tryoh-mobile-audit.json" || audit_status=$?
+          node ../scripts/check-mobile-audit.mjs "$RUNNER_TEMP/tryoh-mobile-audit.json" "$audit_status" dist-ios dist-android
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: tryoh-mobile-js-bundles
           path: |
             mobile/dist-ios/
             mobile/dist-android/
+            !mobile/dist-ios/**/*.map
+            !mobile/dist-android/**/*.map
           retention-days: 7
 
   container:

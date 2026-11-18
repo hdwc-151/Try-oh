@@ -1,7 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
-import { AppErrorBoundary } from './components/AppErrorBoundary'
+import { AppErrorBoundary } from './shared/components/AppErrorBoundary'
 import './styles/index.css'
 
 // After a deploy, a tab that was already open still points at the previous

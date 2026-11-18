@@ -1,6 +1,7 @@
 import { useInfiniteQuery, useIsMutating, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
+import { router } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Pressable, RefreshControl, ScrollView, TextInput, View, useWindowDimensions } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
@@ -11,6 +12,7 @@ import { BottomSheet } from '@/components/bottom-sheet';
 import { AppIcon } from '@/components/icon';
 import { Notice } from '@/components/notice';
 import { OutfitAngles } from '@/components/outfit-angles';
+import { ImageViewerModal } from '@/components/image-zoom-viewer';
 import { PressableScale } from '@/components/pressable-scale';
 import { ScreenError, ScreenLoading } from '@/components/screen-state';
 import { useSheetItem } from '@/hooks/use-sheet-item';
@@ -62,7 +64,7 @@ const MAX_EXTRACT_ITEMS = 5;
 const EXTRACT_KEY = ['ai-extract'];
 const EXTRACT_TIMEOUT_MS = 300_000;
 
-/** `fixedMode` khoá màn ở một chế độ và ẩn công tắc Món đồ/Outfit (segment Tủ đồ, tab Yêu thích). */
+/** `fixedMode` khoá màn ở một chế độ và ẩn công tắc Món đồ/Outfit (segment Tủ đồ, tab Outfit). */
 export function WardrobeScreen({ fixedMode }: { fixedMode?: CatalogMode } = {}) {
   const brand = useBrandColors();
   const queryClient = useQueryClient();
@@ -272,6 +274,8 @@ export function WardrobeScreen({ fixedMode }: { fixedMode?: CatalogMode } = {}) 
               </Animated.View>
             : <AppButton title="Thêm món đồ từ ảnh" icon="sparkles" disabled={remainingSlots === 0} onPress={() => void pickImage()}/>)}
           {mode === 'garments' && !extracting && remainingSlots === 0 && <AppText variant="caption">Tủ đồ đã đầy theo gói hiện tại. Xoá bớt món hoặc nâng gói để thêm.</AppText>}
+          {mode === 'garments' && currentCount >= 3 && <InsightTeaser icon="sparkles" title="Tủ đồ của bạn nói gì?" text="Màu chủ đạo, món phối nhiều nhất, món đang ngủ quên" onPress={() => router.push('/wardrobe-insights')}/>}
+          {mode === 'outfits' && currentCount >= 2 && <InsightTeaser icon="people" title="Tạo bình chọn" onPress={() => router.push('/poll-create')}/>}
 
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm }}>
             {(mode === 'garments' ? categories : outfitFilters).map((filter) => {
@@ -313,7 +317,7 @@ export function WardrobeScreen({ fixedMode }: { fixedMode?: CatalogMode } = {}) 
               onPress={() => garmentSheet.show(entry.item)}
               style={{ width: itemWidth, gap: spacing.xs, padding: spacing.sm, borderRadius: radius.xl, borderCurve: 'continuous', backgroundColor: colors.surface, boxShadow: '0 1px 3px rgba(20, 26, 60, 0.05)' }}>
               <Image
-                source={protectedImageSource(entry.item.frontProcessedUrl || entry.item.frontOriginalUrl, session?.access_token)}
+                source={protectedImageSource(entry.item.frontProcessedUrl || entry.item.frontOriginalUrl, session?.access_token, 320)}
                 recyclingKey={entry.key}
                 style={{ width: '100%', aspectRatio: 1, borderRadius: radius.lg, backgroundColor: colors.groupedBackground }}
                 contentFit="contain"
@@ -432,6 +436,7 @@ function GarmentEditor({ garment, visible, onClose, onClosed, onDone }: { garmen
   const { session } = useAuth();
   const [name, setName] = useState(garment.name);
   const [category, setCategory] = useState<GarmentCategory>(garment.category);
+  const [viewing, setViewing] = useState<string | null>(null);
   const trimmed = name.trim();
   const changed = trimmed !== garment.name || category !== garment.category;
   const save = useMutation({
@@ -457,7 +462,10 @@ function GarmentEditor({ garment, visible, onClose, onClosed, onDone }: { garmen
   const busy = save.isPending || remove.isPending;
   const error = save.error ?? remove.error;
   return <BottomSheet visible={visible} title="Sửa món đồ" onClose={onClose} onClosed={onClosed} dismissable={!busy}>
-    <Image source={protectedImageSource(garment.frontProcessedUrl || garment.frontOriginalUrl, session?.access_token)} style={{ width: '100%', height: 220, borderRadius: radius.lg, backgroundColor: colors.surface }} contentFit="contain"/>
+    <ImageViewerModal uri={viewing} title={garment.name} onClose={() => setViewing(null)}/>
+    <Pressable accessibilityRole="imagebutton" accessibilityLabel="Xem ảnh toàn màn hình" onPress={() => setViewing(garment.frontProcessedUrl || garment.frontOriginalUrl)}>
+      <Image source={protectedImageSource(garment.frontProcessedUrl || garment.frontOriginalUrl, session?.access_token, 320)} style={{ width: '100%', height: 220, borderRadius: radius.lg, backgroundColor: colors.surface }} contentFit="contain"/>
+    </Pressable>
     <View style={{ gap: spacing.xs }}>
       <AppText variant="caption">Tên món đồ</AppText>
       <TextInput
@@ -510,6 +518,7 @@ function OutfitEditor({ outfit, visible, title: initialTitle, policy, social, on
   const [title, setTitle] = useState(initialTitle);
   const [visibility, setVisibility] = useState<OutfitVisibility>(initialVisibility);
   const [groupIds, setGroupIds] = useState<string[]>(policy?.groupIds ?? []);
+  const [viewing, setViewing] = useState<string | null>(null);
   const policyChanged = Boolean(social) && (visibility !== initialVisibility || groupIds.slice().sort().join(',') !== (policy?.groupIds ?? []).slice().sort().join(','));
   const changed = title.trim() !== initialTitle.trim() || policyChanged;
   const needsGroup = visibility === 'groups' && groupIds.length === 0;
@@ -546,7 +555,10 @@ function OutfitEditor({ outfit, visible, title: initialTitle, policy, social, on
   const error = save.error ?? remove.error;
 
   return <BottomSheet visible={visible} title="Sửa outfit" onClose={onClose} onClosed={onClosed} dismissable={!busy}>
-    <OutfitAngles front={outfit.frontImageUrl} back={outfit.backImageUrl} maxHeight={Math.round(windowHeight * 0.45)}/>
+    <ImageViewerModal uri={viewing} title="Outfit" onClose={() => setViewing(null)}/>
+    <View style={{ width: '100%', alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.xs }}>
+      <OutfitAngles front={outfit.frontImageUrl} back={outfit.backImageUrl} maxHeight={Math.round(windowHeight * 0.45)} onPressImage={(uri) => setViewing(uri)}/>
+    </View>
     <View style={{ gap: spacing.xs }}>
       <AppText variant="caption">Tên outfit (lưu trên máy này)</AppText>
       <TextInput
@@ -585,4 +597,19 @@ function OutfitEditor({ outfit, visible, title: initialTitle, policy, social, on
       <AppText variant="headline" style={{ color: colors.destructive }}>Xoá outfit</AppText>
     </Pressable>
   </BottomSheet>;
+}
+
+function InsightTeaser({ icon, title, text, onPress }: { icon: 'sparkles' | 'people'; title: string; text?: string; onPress: () => void }) {
+  const brand = useBrandColors();
+  return <PressableScale accessibilityRole="button" accessibilityLabel={title} onPress={onPress} scaleTo={0.98}
+    style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md, borderRadius: radius.lg, borderCurve: 'continuous', backgroundColor: brand.secondary }}>
+    <View style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface }}>
+      <AppIcon name={icon} size={20} color={brand.accent}/>
+    </View>
+    <View style={{ flex: 1, gap: 2 }}>
+      <AppText variant="headline" style={{ fontSize: 15 }}>{title}</AppText>
+      {text ? <AppText variant="caption">{text}</AppText> : null}
+    </View>
+    <AppIcon name="chevronRight" size={18} color={brand.primary}/>
+  </PressableScale>;
 }

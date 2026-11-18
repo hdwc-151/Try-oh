@@ -1,9 +1,21 @@
 import { ApiError, apiRequest } from './api-client';
 import type { CreditStatus, TryOnResult } from '@/types/api';
 
-type GenerationBody = { garmentIds: string[]; privacyConfirmed: boolean; preservePose: boolean };
+type GenerationBody = { garmentIds: string[]; privacyConfirmed: boolean; preservePose: boolean; keepBackground: boolean };
 type GenerationResult = TryOnResult & { credits: CreditStatus; outfitSaved?: boolean };
 const receipts = new Map<string, { key: string; request?: Promise<GenerationResult> }>();
+type GenerationReceipt = { status: number | null; body?: GenerationResult & { message?: string; code?: string } };
+
+async function readGenerationReceipt(key: string) {
+  for (const delay of [2_000, 6_000, 12_000, 20_000]) {
+    await new Promise(resolve => setTimeout(resolve, delay));
+    const receipt = await apiRequest<GenerationReceipt>('/api/generations/receipt', {
+      headers: { 'Idempotency-Key': key }, timeoutMs: 5_000,
+    }).catch(() => null);
+    if (receipt && Number.isInteger(receipt.status) && receipt.body) return receipt;
+  }
+  return null;
+}
 
 /** Stable only for a retry of the same intent, never a cross-user image cache. */
 export async function generateTryOn(
@@ -29,8 +41,17 @@ export async function generateTryOn(
       receipts.delete(fingerprint);
       return result;
     } catch (error) {
-      if (error instanceof ApiError && error.status > 0 && error.code !== 'generation_in_progress') receipts.delete(fingerprint);
-      throw error;
+      if (error instanceof ApiError && error.status > 0 && error.status < 500 && error.code !== 'generation_in_progress') {
+        receipts.delete(fingerprint);
+        throw error;
+      }
+      const recovered = await readGenerationReceipt(entry.key);
+      if (recovered?.status == null || !recovered.body) {
+        throw new ApiError('Chưa xác nhận được kết quả. Hãy kiểm tra mục Outfit hoặc thử lại cùng lựa chọn.', 0, 'generation_unconfirmed');
+      }
+      receipts.delete(fingerprint);
+      if (recovered.status >= 300) throw new ApiError(recovered.body.message ?? 'Không thể tạo ảnh.', recovered.status, recovered.body.code);
+      return recovered.body;
     }
   };
   entry.request = run();

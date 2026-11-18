@@ -17,12 +17,14 @@ import { TryOhMark, TryOhWordmark } from '@/components/fitsy-mark';
 import { Notice } from '@/components/notice';
 import { SegmentedControl } from '@/components/segmented-control';
 import { TextField } from '@/components/text-field';
-import { useAuth } from '@/providers/auth-provider';
+import { useAuth, type SocialProvider } from '@/providers/auth-provider';
 import { apiRequest } from '@/services/api-client';
 import { colors, radius, shadows, spacing } from '@/theme';
 
 type AuthMode = 'login' | 'register' | 'forgot' | 'reset';
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const socialProviderOrder: readonly SocialProvider[] = ['google'];
+const socialProviderLabels: Record<SocialProvider, string> = { google: 'Google' };
 
 const contentByMode: Record<AuthMode, { eyebrow: string; title?: string; description?: string }> = {
   login: {
@@ -55,11 +57,11 @@ export function AuthScreen({ initialMode = 'login' }: { initialMode?: AuthMode }
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [googleBusy, setGoogleBusy] = useState(false);
-  // Máy chủ quyết định có nút Google hay không (cần GOOGLE_CLIENT_ID/SECRET).
+  const [socialBusy, setSocialBusy] = useState<SocialProvider | null>(null);
+  // Máy chủ quyết định có hiện nút Google không (cần GOOGLE_CLIENT_ID/SECRET).
   const providers = useQuery({
     queryKey: ['auth-providers'],
-    queryFn: () => apiRequest<{ google: boolean }>('/api/auth/providers'),
+    queryFn: () => apiRequest<Partial<Record<SocialProvider, boolean>>>('/api/auth/providers'),
     staleTime: 5 * 60_000,
     retry: false,
   });
@@ -68,6 +70,7 @@ export function AuthScreen({ initialMode = 'login' }: { initialMode?: AuthMode }
   const [error, setError] = useState<string | null>(auth.configurationError);
   const [notice, setNotice] = useState<string | null>(null);
   const visibleError = error ?? auth.linkError;
+  const enabledProviders = socialProviderOrder.filter(provider => Platform.OS !== 'ios' && providers.data?.[provider]);
   const emailRef = useRef<ComponentRef<typeof TextInput>>(null);
   const passwordRef = useRef<ComponentRef<typeof TextInput>>(null);
   const confirmRef = useRef<ComponentRef<typeof TextInput>>(null);
@@ -160,17 +163,17 @@ export function AuthScreen({ initialMode = 'login' }: { initialMode?: AuthMode }
     }
   };
 
-  const continueWithGoogle = async () => {
-    if (googleBusy || busy) return;
-    setGoogleBusy(true);
+  const continueWithProvider = async (provider: SocialProvider) => {
+    if (socialBusy || busy) return;
+    setSocialBusy(provider);
     setError(null);
     setNotice(null);
     try {
-      await auth.signInWithGoogle();
+      await auth.signInWithProvider(provider);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Không thể đăng nhập bằng Google.');
+      setError(cause instanceof Error ? cause.message : 'Không thể đăng nhập. Vui lòng thử lại.');
     } finally {
-      setGoogleBusy(false);
+      setSocialBusy(null);
     }
   };
 
@@ -201,7 +204,7 @@ export function AuthScreen({ initialMode = 'login' }: { initialMode?: AuthMode }
   return (
     <KeyboardAvoidingView
       style={{ flex: 1, backgroundColor: colors.background }}
-      behavior={process.env.EXPO_OS === 'ios' ? 'padding' : undefined}>
+      behavior="padding">
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         keyboardShouldPersistTaps="handled"
@@ -360,20 +363,23 @@ export function AuthScreen({ initialMode = 'login' }: { initialMode?: AuthMode }
               onPress={() => void submit()}
             />
 
-            {Platform.OS !== 'ios' && providers.data?.google && (mode === 'login' || mode === 'register') && <>
+            {enabledProviders.length > 0 && (mode === 'login' || mode === 'register') && <>
               <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
                 <View style={{ flex: 1, height: 1, backgroundColor: colors.separator }}/>
                 <AppText variant="caption">hoặc</AppText>
                 <View style={{ flex: 1, height: 1, backgroundColor: colors.separator }}/>
               </View>
-              <AppButton
-                title="Tiếp tục với Google"
-                variant="secondary"
-                loading={googleBusy}
-                loadingTitle="Đang mở Google…"
-                disabled={busy || Boolean(auth.configurationError)}
-                onPress={() => void continueWithGoogle()}
-              />
+              {enabledProviders.map(provider => (
+                <AppButton
+                  key={provider}
+                  title={`Tiếp tục với ${socialProviderLabels[provider]}`}
+                  variant="secondary"
+                  loading={socialBusy === provider}
+                  loadingTitle={`Đang mở ${socialProviderLabels[provider]}…`}
+                  disabled={busy || socialBusy !== null || Boolean(auth.configurationError)}
+                  onPress={() => void continueWithProvider(provider)}
+                />
+              ))}
             </>}
 
             {awaitingConfirmation && (

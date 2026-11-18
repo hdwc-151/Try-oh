@@ -22,6 +22,8 @@ export interface SocialService {
   search(userId: string, query: string): MaybePromise<SocialPerson[]>
   resolveInvite(userId: string, code: string): MaybePromise<SocialPerson>
   profile(userId: string, targetId: string): MaybePromise<unknown>
+  /** Người đang theo dõi `userId`, mới nhất trước. */
+  followers(userId: string, offset: number, limit: number): MaybePromise<{ items: SocialPerson[]; total: number; nextOffset: number | null }>
   trackTemporaryImage(userId: string, key: string): MaybePromise<void>
   canReadImage(userId: string, key: string): MaybePromise<boolean>
   /** Image keys referenced by the user's social content (avatar, posts, polls, temporary images). */

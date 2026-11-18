@@ -1,40 +1,57 @@
-# Fitsy Mobile
+# Try-oh Mobile
 
-Ứng dụng Expo/React Native dùng chung tài khoản, tủ đồ, kết quả thử đồ và dữ liệu bạn bè với Fitsy Web.
+**Tiếng Việt** · [English](#english) · [README dự án](../README.md) · [Phát hành](../docs/PUBLISHING.md)
 
-## Chạy local
+Ứng dụng Expo/React Native dùng chung tài khoản, tủ đồ, lịch sử và dữ liệu bạn bè với Try-oh Web.
 
-```bash
-npm install
-copy .env.example .env
-npm start
-```
+## Mở demo do người khác host
 
-Điền `EXPO_PUBLIC_SUPABASE_URL` và `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` bằng cùng project Supabase của web. `EXPO_PUBLIC_API_URL` là bắt buộc và nên trỏ tới domain API riêng để có thể đổi hạ tầng mà không đổi thương hiệu.
+Cài **Expo Go trên điện thoại** và quét QR từ phiên Metro đang chạy. Android quét trong Expo Go. iPhone mở từ Camera và dùng cùng tài khoản Expo với phiên CLI phía host. Nếu khác mạng, host chạy `npx expo start --tunnel`. Nếu xem web trên laptop, chỉ cần trình duyệt. [Hướng dẫn Expo](https://docs.expo.dev/get-started/start-developing/).
 
-Đặt `EXPO_PUBLIC_BILLING_MODE=external` cho APK phân phối trực tiếp dùng VietQR/MoMo. Với bản gửi Google Play hoặc App Store, bỏ biến này: app ẩn nút thanh toán và gửi header `X-Client-Channel: store`, backend cũng từ chối tạo đơn thanh toán ngoài cho bản đó. Cần tích hợp sản phẩm in-app trước khi bán gói trên cửa hàng.
+QR chuyển bundle từ Metro. Đăng nhập và thử đồ vẫn kết nối tới `EXPO_PUBLIC_API_URL`. Nếu QR mở được nhưng báo lỗi mạng, cần kiểm tra API từ điện thoại. `localhost` trên điện thoại trỏ về chính điện thoại.
 
-Người dùng xoá tài khoản trong **Cài đặt → Xóa tài khoản**; app gọi `DELETE /api/auth/account` rồi đăng xuất.
+## Tự host
 
-Trong Supabase Authentication, thêm `fitsy://auth-callback` và `fitsy://reset-password` vào Redirect URLs để liên kết xác minh email và đặt lại mật khẩu mở lại ứng dụng.
+Chạy trong thư mục `mobile/`:
 
-Nút **Tiếp tục với Google** chỉ hiện khi backend có `GOOGLE_CLIENT_ID` và `GOOGLE_CLIENT_SECRET` (xem README gốc). App mở `EXPO_PUBLIC_API_URL/api/auth/oauth/google` trong trình duyệt, backend làm việc với Google rồi trả về `fitsy://auth-callback?fitsy_code=…`. Khi chạy bằng Expo Go, địa chỉ quay về là `exp://…/--/auth-callback`: thêm địa chỉ đó vào `MOBILE_AUTH_REDIRECT_URLS` của backend và sửa `googleRedirect` trong `src/providers/auth-provider.tsx` trong lúc phát triển.
+~~~powershell
+npm ci
+if (!(Test-Path .env)) { Copy-Item .env.example .env }
+~~~
 
-## Kiểm tra
+Điền ba biến public trong `.env`:
 
-```bash
-npm run lint
-npx tsc --noEmit
-npx expo-doctor
-npx expo export --platform android
-```
+- `EXPO_PUBLIC_API_URL` là URL backend điện thoại mở được.
+- `EXPO_PUBLIC_SUPABASE_URL` và `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` lấy từ đúng project Supabase backend dùng.
 
-## Build cài đặt
+~~~powershell
+npm run check
+npx expo start --tunnel
+~~~
 
-```bash
-npx eas-cli@latest login
-npx eas-cli@latest build:configure
-npx eas-cli@latest build --platform android --profile preview
-```
+Backend mobile dùng Supabase Auth và PostgreSQL. Deep link bản cài là `tryoh://auth-callback` và `tryoh://reset-password`. Với OAuth trong Expo Go trên Android, cấu hình đúng URL callback `exp://...` của phiên test ở backend. iOS dùng email/password.
 
-Profile `preview` tạo bản Android cài nội bộ. Profile `production` dùng cho bản phát hành chính thức.
+## Tạo bản cài độc lập
+
+Thiết lập project EAS của bạn, `EXPO_PROJECT_ID`, `EXPO_ACCOUNT_OWNER` và biến public. Cả hai nền tảng dùng định danh `com.hdwc151.tryoh`.
+
+~~~bash
+npx eas-cli@27.7.2 build --platform android --profile preview
+npx eas-cli@27.7.2 build --platform ios --profile preview
+~~~
+
+| Profile | Android | iOS |
+| --- | --- | --- |
+| `preview` | APK cài thử | Ad hoc cho iPhone đã đăng ký |
+| `production` | AAB cho Google Play | Bản ký cho TestFlight/App Store Connect |
+| `simulator` | — | iOS Simulator trên macOS |
+
+Bản cài đã chứa bundle. Camera trực tiếp cần bản native có WebRTC và backend bật Decart. Khi mở tính năng, camera gửi video và ảnh tham chiếu sang Decart, với audio tắt. Bản store ẩn thanh toán ngoài. [Thiết lập ký và phát hành](../docs/PUBLISHING.md).
+
+## English
+
+To join a hosted demo, install **Expo Go on the phone** and scan the host's Metro QR. If you are on different networks, the host uses `--tunnel`. A physical iPhone uses the same Expo account as the host CLI. A laptop tester opens the web URL in a browser.
+
+To host, run `npm ci` in `mobile/`, copy `.env.example` to `.env`, and set the reachable API URL, Supabase URL and matching public key. Run `npm run check` and `npx expo start --tunnel`. The API connection is independent of the Metro tunnel.
+
+The EAS preview profile produces an Android APK or a signed iOS build for registered devices. TestFlight uses a signed production build. Live camera try-on requires WebRTC in the native app and Decart on the backend. [English project README](../README.en.md#android-and-ios) · [Expo internal distribution](https://docs.expo.dev/build/internal-distribution/).

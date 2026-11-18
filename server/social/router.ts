@@ -22,6 +22,11 @@ export function createSocialRouter(
   router.get('/', async (req,res,next) => { try { res.json(await store.snapshot(req.authUser.id)) } catch (error) { next(error) } })
   router.get('/search', async (req,res,next) => { try { res.json(await store.search(req.authUser.id, String(req.query.q ?? ''))) } catch (error) { next(error) } })
   router.get('/invite', async (req,res,next) => { try { res.json(await store.resolveInvite(req.authUser.id, String(req.query.code ?? ''))) } catch (error) { next(error) } })
+  router.get('/followers', async (req,res,next) => { try {
+    const offset = Math.max(0, Math.floor(Number(req.query.offset ?? 0)) || 0)
+    const limit = Math.min(50, Math.max(1, Math.floor(Number(req.query.limit ?? 30)) || 30))
+    res.json(await store.followers(req.authUser.id, offset, limit))
+  } catch (error) { next(error) } })
   router.get('/profile/:id', async (req,res,next) => { try { res.json(await store.profile(req.authUser.id, String(req.params.id))) } catch (error) { next(error) } })
   // Moderation lives under /api/admin/moderation (admin router), where every action is audited.
   router.post('/avatar', avatarUpload, async (req,res,next) => {

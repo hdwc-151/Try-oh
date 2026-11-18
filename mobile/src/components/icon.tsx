@@ -32,6 +32,8 @@ const icons = {
   cloudOff: { ios: 'wifi.exclamationmark', android: 'cloud_off', web: 'cloud_off' },
   chevronRight: { ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' },
   minus: { ios: 'minus', android: 'remove', web: 'remove' },
+  verified: { ios: 'checkmark.seal.fill', android: 'verified', web: 'verified' },
+  grid: { ios: 'square.grid.3x3', android: 'grid_view', web: 'grid_view' },
 } satisfies Record<string, IconName>;
 
 export type AppIconName = keyof typeof icons;

@@ -90,10 +90,21 @@ export async function apiRequest<T>(path: string, init: ApiRequestInit = {}): Pr
   return response.json() as Promise<T>;
 }
 
-export function protectedImageSource(path: string | null | undefined, accessToken?: string) {
+/**
+ * Nguồn ảnh kèm token. `width` xin ảnh thu nhỏ máy chủ tạo sẵn (`/uploads/:key?w=`) cho các
+ * màn lưới, tải nhẹ hơn ảnh gốc nhiều lần; ảnh ngoài (http, file) giữ nguyên.
+ */
+export function protectedImageSource(path: string | null | undefined, accessToken?: string, width?: 160 | 320 | 640) {
   if (!path) return undefined;
-  return {
-    uri: path.startsWith('http') ? path : apiBaseUrl + path,
-    headers: accessToken ? { Authorization: 'Bearer ' + accessToken } : undefined,
-  };
+  try {
+    const url = new URL(path, apiBaseUrl + '/');
+    const privateImage = url.origin === new URL(apiBaseUrl).origin && url.pathname.startsWith('/uploads/');
+    if (width && privateImage && !url.search) url.searchParams.set('w', String(width));
+    return {
+      uri: url.toString(),
+      headers: privateImage && accessToken ? { Authorization: 'Bearer ' + accessToken } : undefined,
+    };
+  } catch {
+    return undefined;
+  }
 }

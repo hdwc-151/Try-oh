@@ -5,6 +5,12 @@ export type PlanEntitlements = {
   wardrobeItems: number
   savedOutfits: number
   selectedGarments: number
+  /** Live camera try-on sessions (Decart) allowed per rolling window; 0 = not included. */
+  livePreviewSessions: number
+  /** Length of one live preview session, in seconds. */
+  livePreviewSeconds: number
+  /** Whether the user may pick Decart's fast tier (lower latency, double price). */
+  livePreviewFastMode: boolean
 }
 
 export type SubscriptionPlan = {

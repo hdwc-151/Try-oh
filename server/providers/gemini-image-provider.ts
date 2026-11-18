@@ -176,6 +176,7 @@ export class GeminiImageProvider implements ImageProvider {
           hasReferenceImage: Boolean(referenceImage),
           garments: input.garments,
           preservePose: input.preservePose,
+          keepBackground: input.keepBackground,
         }),
       },
       { text: 'IMAGE 1 — PRIMARY PERSON AND OUTFIT REFERENCE:' },

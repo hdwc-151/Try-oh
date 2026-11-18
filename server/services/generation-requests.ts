@@ -11,6 +11,7 @@ export type GenerationClaim = { claimed: true } | { claimed: false; previous: Ge
 /** A pending claim is never stolen: a timed out worker may still be spending money. */
 export interface GenerationRequestStore {
   claim(userId: string, key: string, fingerprint: string): Promise<GenerationClaim>
+  find(userId: string, key: string): Promise<GenerationRequest | null>
   complete(userId: string, key: string, status: number, body: unknown): Promise<void>
   deleteUser(userId: string): Promise<void>
   close?(): void
@@ -33,6 +34,10 @@ export class MemoryGenerationRequestStore implements GenerationRequestStore {
   async complete(userId: string, key: string, status: number, body: unknown) {
     const entry = this.entries.get(JSON.stringify([userId, key]))
     if (entry) Object.assign(entry, { status, body })
+  }
+  async find(userId: string, key: string) {
+    const entry = this.entries.get(JSON.stringify([userId, key]))
+    return entry && entry.expires > Date.now() ? entry : null
   }
   async deleteUser(userId: string) {
     for (const key of this.entries.keys()) if (JSON.parse(key)[0] === userId) this.entries.delete(key)
@@ -62,6 +67,11 @@ export class SqliteGenerationRequestStore implements GenerationRequestStore {
   async complete(userId: string, key: string, status: number, body: unknown) {
     this.db.prepare('UPDATE generation_requests SET status = ?, response_json = ? WHERE user_id = ? AND request_key = ? AND status IS NULL').run(status, JSON.stringify(body), userId, key)
   }
+  async find(userId: string, key: string): Promise<GenerationRequest | null> {
+    const row = this.db.prepare('SELECT fingerprint, status, response_json FROM generation_requests WHERE user_id = ? AND request_key = ? AND expires_at > ?')
+      .get(userId, key, Date.now()) as { fingerprint: string; status: number | null; response_json: string | null } | undefined
+    return row ? { fingerprint: row.fingerprint, status: row.status, body: row.response_json === null ? null : JSON.parse(row.response_json) } : null
+  }
   async deleteUser(userId: string) { this.db.prepare('DELETE FROM generation_requests WHERE user_id = ?').run(userId) }
   close() { this.db.close() }
 }
@@ -86,6 +96,13 @@ export class PostgresGenerationRequestStore implements GenerationRequestStore {
   }
   async complete(userId: string, key: string, status: number, body: unknown) {
     await this.pool.query('UPDATE public.generation_requests SET status = $3, response_json = $4::jsonb WHERE user_id = $1 AND request_key = $2 AND status IS NULL', [userId, key, status, JSON.stringify(body)])
+  }
+  async find(userId: string, key: string): Promise<GenerationRequest | null> {
+    const { rows } = await this.pool.query<GenerationRequest>(
+      'SELECT fingerprint, status, response_json AS body FROM public.generation_requests WHERE user_id = $1 AND request_key = $2 AND expires_at > now()',
+      [userId, key],
+    )
+    return rows[0] ?? null
   }
   async deleteUser(userId: string) { await this.pool.query('DELETE FROM public.generation_requests WHERE user_id = $1', [userId]) }
 }

@@ -2,10 +2,11 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import type { PoolClient } from 'pg'
 import { AuthError } from '../auth/auth-service.js'
 import { withTransaction, type PostgresPool } from '../storage/postgres.js'
-import type { SavedOutfitRecord } from '../domain/saved-outfit.js'
+import type { SavedOutfitRecord } from '../user-data/saved-outfit.js'
 import type { ModerationReport, SocialService } from './social-service.js'
-import type { OutfitPolicy, SocialPerson, SocialPoll, SocialProfile, SocialSnapshot, SocialPost, SocialVisibility } from './types.js'
+import type { OutfitPolicy, SocialPerson, SocialPoll, SocialProfile, SocialProfileView, SocialSnapshot, SocialPost, SocialVisibility } from './types.js'
 import { prepareSocialSearch, socialSearchScore } from './search.js'
+import { canViewProfile, DEFAULT_PROFILE_VISIBILITY, parsePollHours, parseProfileVisibility, resolvePollAudience } from './poll-audience.js'
 
 /*
  * Social graph on normalized PostgreSQL tables (migration 009).
@@ -129,7 +130,7 @@ export class PostgresSocialStore implements SocialService {
    * Loads the social neighbourhood of `focus` users. Relations are complete for
    * focus users; for everyone else only what is needed to evaluate visibility.
    */
-  private async load(db: Db, focusInput: string[], extra: { postIds?: string[]; pollIds?: string[]; transactional?: boolean } = {}): Promise<Loaded> {
+  private async load(db: Db, focusInput: string[], extra: { postIds?: string[]; pollIds?: string[]; transactional?: boolean; followersOf?: string[] } = {}): Promise<Loaded> {
     const focus = uniq(focusInput.filter(isUuid))
     const state = freshState()
     if (!focus.length) return { state, context: { users: [], outfits: [], followerCounts: new Map() } }
@@ -145,7 +146,9 @@ export class PostgresSocialStore implements SocialService {
          WHERE g.id IN (SELECT group_id FROM friend_group_members WHERE user_id = ANY($1::uuid[]))
          GROUP BY g.id`, [focus]),
       db.query<{ blocker_id: string; blocked_id: string }>('SELECT blocker_id, blocked_id FROM user_blocks WHERE blocker_id = ANY($1::uuid[]) OR blocked_id = ANY($1::uuid[])', [focus]),
-      db.query<{ follower_id: string; creator_id: string }>('SELECT follower_id, creator_id FROM creator_follows WHERE follower_id = ANY($1::uuid[]) OR creator_id = ANY($1::uuid[])', [focus]),
+      // Follows made by focus users; a creator's full follower list is loaded only when asked for
+      // (addressing a public poll), since it can run to thousands of rows.
+      db.query<{ follower_id: string; creator_id: string }>('SELECT follower_id, creator_id FROM creator_follows WHERE follower_id = ANY($1::uuid[]) OR creator_id = ANY($2::uuid[])', [focus, (extra.followersOf ?? []).filter(isUuid)]),
       db.query<{ id: string }>(
         `SELECT id FROM (
            SELECT id, created_at FROM social_polls WHERE owner_id = ANY($1::uuid[])
@@ -212,9 +215,9 @@ export class PostgresSocialStore implements SocialService {
     const outfitOwners = uniq([...focus, ...state.polls.map(poll => poll.ownerId)])
 
     const [profileRows, pairRows, blockPairRows, followPairRows, outfitRows, policyRows, followerRows] = await Promise.all([
-      db.query<{ id: string; name: string; role: string; username: string; avatar: string; birth_date: string | null; invite_code: string; invite_policy: Profile['invitePolicy']; default_visibility: Profile['defaultVisibility'] }>(
+      db.query<{ id: string; name: string; role: string; username: string; avatar: string; birth_date: string | null; invite_code: string; invite_policy: Profile['invitePolicy']; default_visibility: Profile['defaultVisibility']; profile_visibility: Profile['profileVisibility'] }>(
         `SELECT p.id, p.display_name AS name, p.role, s.username, s.avatar, to_char(s.birth_date, 'YYYY-MM-DD') AS birth_date,
-                s.invite_code, s.invite_policy, s.default_visibility
+                s.invite_code, s.invite_policy, s.default_visibility, s.profile_visibility
          FROM profiles p JOIN social_profiles s ON s.user_id = p.id WHERE p.id = ANY($1::uuid[])`, [related]),
       db.query<{ user_a: string; user_b: string }>('SELECT user_a, user_b FROM friendships WHERE user_a = ANY($1::uuid[]) AND user_b = ANY($1::uuid[])', [related]),
       db.query<{ blocker_id: string; blocked_id: string }>('SELECT blocker_id, blocked_id FROM user_blocks WHERE blocker_id = ANY($1::uuid[]) AND blocked_id = ANY($1::uuid[])', [related]),
@@ -223,12 +226,12 @@ export class PostgresSocialStore implements SocialService {
         'SELECT id, user_id, front_image_url, front_image_key, back_image_url, back_image_key, garment_ids::text[] AS garment_ids, created_at FROM saved_outfits WHERE user_id = ANY($1::uuid[]) ORDER BY created_at', [outfitOwners]),
       db.query<{ outfit_id: string; owner_id: string; visibility: OutfitPolicy['visibility']; group_ids: string[]; official: boolean }>(
         'SELECT outfit_id, owner_id, visibility, group_ids::text[] AS group_ids, official FROM outfit_policies WHERE owner_id = ANY($1::uuid[])', [outfitOwners]),
-      db.query<{ creator_id: string; count: string }>('SELECT creator_id, count(*)::text AS count FROM creator_follows WHERE creator_id = ANY($1::uuid[]) GROUP BY creator_id', [creatorIds]),
+      db.query<{ creator_id: string; count: string }>('SELECT creator_id, count(*)::text AS count FROM creator_follows WHERE creator_id = ANY($1::uuid[]) GROUP BY creator_id', [uniq([...creatorIds, ...focus])]),
     ])
 
     state.profiles = profileRows.rows.map(row => ({
       id: row.id, username: row.username, avatar: row.avatar, birthDate: row.birth_date,
-      inviteCode: row.invite_code, invitePolicy: row.invite_policy, defaultVisibility: row.default_visibility,
+      inviteCode: row.invite_code, invitePolicy: row.invite_policy, defaultVisibility: row.default_visibility, profileVisibility: row.profile_visibility ?? DEFAULT_PROFILE_VISIBILITY,
     }))
     const mergePairs = (current: [string, string][], rows: [string, string][], key: (pair: [string, string]) => string) => {
       const seen = new Set(current.map(key))
@@ -285,6 +288,8 @@ export class PostgresSocialStore implements SocialService {
     if (!profile || !user) return fail('Không tìm thấy người dùng.', 404)
     return { id, username: profile.username, avatar: profile.avatar, name: user.name, creator: user.role === 'koc' || user.role === 'admin' }
   }
+  /** Có đủ hồ sơ để dựng SocialPerson (tránh lỗi 404 khi một tài khoản vừa bị xoá). */
+  private known(state: State, context: Context, id: string) { return state.profiles.some(item => item.id === id) && context.users.some(item => item.id === id) }
   private blocked(state: State, a: string, b: string) { return state.blocks.some(([x, y]) => (x === a && y === b) || (y === a && x === b)) }
   private friend(state: State, a: string, b: string) { return !this.blocked(state, a, b) && state.friends.some(([x, y]) => (x === a && y === b) || (y === a && x === b)) }
   private friends(state: State, id: string) { return state.profiles.filter(profile => this.friend(state, id, profile.id)).map(profile => profile.id) }
@@ -295,7 +300,7 @@ export class PostgresSocialStore implements SocialService {
     return age < 18
   }
   private notice(state: State, userId: string, actor: string, kind: Notice['kind'], targetId: string) { state.notices.push({ id: randomUUID(), userId, actor, kind, targetId, read: false, createdAt: Date.now() }) }
-  private activeRecipients(state: State, poll: Poll) { return poll.recipients.filter(id => !this.blocked(state, poll.ownerId, id) && (this.friend(state, poll.ownerId, id) || Boolean(poll.imageOptions?.length && poll.visibility === 'public' && state.follows.some(([follower, creator]) => follower === id && creator === poll.ownerId)))) }
+  private activeRecipients(state: State, poll: Poll) { return poll.recipients.filter(id => !this.blocked(state, poll.ownerId, id) && (this.friend(state, poll.ownerId, id) || Boolean(poll.visibility === 'public' && state.follows.some(([follower, creator]) => follower === id && creator === poll.ownerId)))) }
   private ownerOutfits(context: Context, ownerId: string) { return context.outfits.filter(outfit => outfit.ownerId === ownerId) }
   private visiblePoll(state: State, context: Context, poll: Poll, user: string) { return (poll.ownerId === user || this.activeRecipients(state, poll).includes(user)) && (poll.imageOptions?.length ? true : poll.outfitIds.every(id => this.ownerOutfits(context, poll.ownerId).some(outfit => outfit.id === id))) }
   private pollNeedsResult(poll: Poll) { return !poll.notified && (poll.closed || poll.expiresAt <= Date.now()) }
@@ -315,7 +320,7 @@ export class PostgresSocialStore implements SocialService {
   }
   private visiblePost(state: State, post: Post, viewer: string) { if (post.hidden) return false; if (post.ownerId === viewer) return true; if (this.blocked(state, post.ownerId, viewer)) return false; if (post.visibility === 'public') return true; if (post.visibility === 'friends') return this.friend(state, post.ownerId, viewer); if (post.visibility === 'groups') return state.groups.some(group => post.groupIds.includes(group.id) && group.members.includes(post.ownerId) && group.members.includes(viewer)); return false }
   private socialPost(state: State, context: Context, post: Post): SocialPost { const owner = this.person(state, context, post.ownerId); return { id: post.id, owner, caption: post.caption, imageUrls: post.imageUrls, visibility: post.visibility, groupIds: post.groupIds, createdAt: post.createdAt, creator: Boolean(owner.creator) } }
-  private canViewOutfit(state: State, context: Context, viewer: string, owner: string, outfitId: string) { if (viewer === owner) return true; if (!this.friend(state, viewer, owner)) return false; const policy = state.policies.find(item => item.ownerId === owner && item.outfitId === outfitId); const visibility = policy?.visibility ?? state.profiles.find(profile => profile.id === owner)?.defaultVisibility ?? 'private'; if (visibility === 'friends') return true; if (policy?.visibility === 'groups' && state.groups.some(group => policy.groupIds.includes(group.id) && group.members.includes(owner) && group.members.includes(viewer))) return true; return state.polls.some(poll => poll.ownerId === owner && poll.outfitIds.includes(outfitId) && poll.recipients.includes(viewer) && this.visiblePoll(state, context, poll, viewer)) }
+  private canViewOutfit(state: State, context: Context, viewer: string, owner: string, outfitId: string) { if (viewer === owner) return true; if (state.polls.some(poll => poll.ownerId === owner && !poll.imageOptions?.length && poll.outfitIds.includes(outfitId) && this.visiblePoll(state, context, poll, viewer))) return true; if (!this.friend(state, viewer, owner)) return false; const policy = state.policies.find(item => item.ownerId === owner && item.outfitId === outfitId); const visibility = policy?.visibility ?? state.profiles.find(profile => profile.id === owner)?.defaultVisibility ?? 'private'; if (visibility === 'friends') return true; if (policy?.visibility === 'groups' && state.groups.some(group => policy.groupIds.includes(group.id) && group.members.includes(owner) && group.members.includes(viewer))) return true; return state.polls.some(poll => poll.ownerId === owner && poll.outfitIds.includes(outfitId) && poll.recipients.includes(viewer) && this.visiblePoll(state, context, poll, viewer)) }
   private sever(state: State, a: string, b: string) { state.friends = state.friends.filter(([x, y]) => !((x === a && y === b) || (x === b && y === a))); state.requests = state.requests.filter(row => !((row.from === a && row.to === b) || (row.from === b && row.to === a))); for (const group of state.groups) { if (group.ownerId === a) group.members = group.members.filter(id => id !== b); if (group.ownerId === b) group.members = group.members.filter(id => id !== a) } for (const poll of state.polls) { if (poll.ownerId === a) { poll.recipients = poll.recipients.filter(id => id !== b); delete poll.votes[b] } if (poll.ownerId === b) { poll.recipients = poll.recipients.filter(id => id !== a); delete poll.votes[a] } } }
 
   // ---------------------------------------------------------------------------
@@ -367,6 +372,8 @@ export class PostgresSocialStore implements SocialService {
       creatorFeed: state.posts.filter(post => this.person(state, context, post.ownerId).creator && (post.ownerId === user || state.follows.some(([follower, creator]) => follower === user && creator === post.ownerId)) && this.visiblePost(state, post, user)).map(post => this.socialPost(state, context, post)).sort((a, b) => b.createdAt - a.createdAt).slice(0, FEED_LIMIT),
       creators: context.users.filter(item => item.role === 'koc' || item.role === 'admin').map(item => this.person(state, context, item.id)).filter(person => !this.blocked(state, user, person.id)).map(person => ({ person, following: state.follows.some(([follower, creator]) => follower === user && creator === person.id), followerCount: context.followerCounts.get(person.id) ?? 0 })),
       followingIds: state.follows.filter(([follower]) => follower === user).map(([, creator]) => creator),
+      followerCount: context.followerCounts.get(user) ?? 0,
+      following: state.follows.filter(([follower, creator]) => follower === user && !this.blocked(state, user, creator) && this.known(state, context, creator)).map(([, creator]) => this.person(state, context, creator)),
     }
   }
 
@@ -410,14 +417,49 @@ export class PostgresSocialStore implements SocialService {
     return this.person(state, context, target)
   }
 
-  async profile(user: string, target: string) {
+  async profile(user: string, target: string): Promise<SocialProfileView> {
     if (!isUuid(target)) return fail('Hồ sơ không khả dụng.', 404)
     const { state, context } = await this.load(this.pool, [user, target])
-    if (user !== target && !this.friend(state, user, target)) return fail('Hồ sơ không khả dụng.', 404)
-    return {
-      person: this.person(state, context, target),
-      outfits: this.ownerOutfits(context, target).filter(outfit => this.canViewOutfit(state, context, user, target, outfit.id)).map(outfit => ({ id: outfit.id, frontImageUrl: outfit.frontImageUrl, backImageUrl: outfit.backImageUrl, official: state.policies.some(policy => policy.outfitId === outfit.id && policy.official) })),
+    if (!this.known(state, context, target)) return fail('Hồ sơ không khả dụng.', 404)
+    const person = this.person(state, context, target)
+    const friend = this.friend(state, user, target)
+    const blocked = user !== target && this.blocked(state, user, target)
+    if (blocked) return fail('Hồ sơ không khả dụng.', 404)
+    const visibility = state.profiles.find(profile => profile.id === target)?.profileVisibility
+    const allowed = canViewProfile({ viewer: user, target, blocked, creator: Boolean(person.creator), friend, visibility })
+    const header = {
+      person,
+      friend,
+      followerCount: context.followerCounts.get(target) ?? 0,
+      followingCount: state.follows.filter(([follower]) => follower === target).length,
+      following: state.follows.some(([follower, creator]) => follower === user && creator === target),
     }
+    if (!allowed) return { ...header, followingCount: 0, posts: [], outfits: [], polls: [], locked: true }
+    return {
+      ...header,
+      locked: false,
+      posts: state.posts.filter(post => post.ownerId === target && this.visiblePost(state, post, user)).map(post => this.socialPost(state, context, post)).sort((a, b) => b.createdAt - a.createdAt),
+      outfits: this.ownerOutfits(context, target).filter(outfit => this.canViewOutfit(state, context, user, target, outfit.id)).map(outfit => ({ id: outfit.id, frontImageUrl: outfit.frontImageUrl, backImageUrl: outfit.backImageUrl, official: state.policies.some(policy => policy.outfitId === outfit.id && policy.official) })),
+      polls: state.polls.filter(poll => poll.ownerId === target && this.visiblePoll(state, context, poll, user)).map(poll => this.poll(state, context, poll, user)).sort((a, b) => b.createdAt - a.createdAt),
+    }
+  }
+
+  async followers(user: string, offset: number, limit: number): Promise<{ items: SocialPerson[]; total: number; nextOffset: number | null }> {
+    if (!isUuid(user)) return { items: [], total: 0, nextOffset: null }
+    const visible = `FROM creator_follows f
+         JOIN profiles p ON p.id = f.follower_id
+         JOIN social_profiles s ON s.user_id = f.follower_id
+         WHERE f.creator_id = $1
+           AND NOT EXISTS (SELECT 1 FROM user_blocks b WHERE (b.blocker_id = $1 AND b.blocked_id = f.follower_id) OR (b.blocker_id = f.follower_id AND b.blocked_id = $1))`
+    const [rows, count] = await Promise.all([
+      this.pool.query<{ id: string; name: string; role: string; username: string; avatar: string }>(
+        `SELECT p.id, p.display_name AS name, p.role, s.username, s.avatar ${visible}
+         ORDER BY f.created_at DESC, f.follower_id LIMIT $2 OFFSET $3`, [user, limit, offset]),
+      this.pool.query<{ total: string }>(`SELECT count(*)::text AS total ${visible}`, [user]),
+    ])
+    const total = Number(count.rows[0]?.total ?? 0)
+    const items = rows.rows.map(row => ({ id: row.id, username: row.username, avatar: row.avatar, name: row.name, creator: row.role === 'koc' || row.role === 'admin' }))
+    return { items, total, nextOffset: offset + items.length < total ? offset + items.length : null }
   }
 
   async canReadImage(user: string, key: string): Promise<boolean> {
@@ -519,7 +561,7 @@ export class PostgresSocialStore implements SocialService {
   async act(user: string, action: string, body: Record<string, unknown>): Promise<SocialSnapshot> {
     if (!isUuid(user)) return fail('Không tìm thấy người dùng.', 404)
     const target = typeof body.targetId === 'string' ? body.targetId : ''
-    if (target && !isUuid(target) && ['request', 'unfriend', 'block', 'unblock', 'report', 'follow', 'unfollow'].includes(action)) {
+    if (target && !isUuid(target) && ['request', 'unfriend', 'block', 'unblock', 'report', 'follow', 'unfollow', 'remove-follower'].includes(action)) {
       return fail(action === 'follow' || action === 'unfollow' ? 'Nhà sáng tạo không hợp lệ.' : 'Người dùng không hợp lệ.', action === 'follow' || action === 'unfollow' ? 404 : 400)
     }
     if (action === 'settings' && typeof body.username === 'string') {
@@ -531,7 +573,9 @@ export class PostgresSocialStore implements SocialService {
     try {
       await withTransaction(this.pool, async client => {
         await this.lock(client, focus)
-        const { state, context } = await this.load(client, focus, { transactional: true })
+        // Addressing a public poll needs every follower of the author.
+        const followersOf = (action === 'poll-create' || action === 'image-poll-create') && (body.audience === 'public' || body.visibility === 'public') ? [user] : []
+        const { state, context } = await this.load(client, focus, { transactional: true, followersOf })
         const before = clone(state)
         this.apply(state, context, user, target, action, body)
         await this.sync(client, before, state)
@@ -564,6 +608,7 @@ export class PostgresSocialStore implements SocialService {
       if (body.avatar !== undefined) { const avatar = str(body.avatar, 500); if (avatar && !avatar.startsWith('/uploads/')) fail('Ảnh đại diện không hợp lệ.'); me.avatar = avatar }
       me.invitePolicy = policy as SocialProfile['invitePolicy']
       if (body.defaultVisibility !== undefined) { if (body.defaultVisibility !== 'private' && body.defaultVisibility !== 'friends') fail('Quyền xem mặc định không hợp lệ.'); me.defaultVisibility = body.defaultVisibility as SocialProfile['defaultVisibility'] }
+      if (body.profileVisibility !== undefined) me.profileVisibility = parseProfileVisibility(body.profileVisibility)
       if (this.restricted(me) && me.invitePolicy === 'everyone') me.invitePolicy = 'known'
     } else if (action === 'rotate-invite') {
       me.inviteCode = randomBytes(24).toString('base64url')
@@ -632,10 +677,14 @@ export class PostgresSocialStore implements SocialService {
       if (!creator.creator || this.blocked(state, user, target)) fail('Nhà sáng tạo không hợp lệ.', 404)
       if (action === 'follow' && !state.follows.some(([follower, id]) => follower === user && id === target)) state.follows.push([user, target])
       if (action === 'unfollow') state.follows = state.follows.filter(([follower, id]) => !(follower === user && id === target))
+    } else if (action === 'remove-follower') {
+      // KOL/KOC gỡ một người khỏi danh sách theo dõi mình (người đó vẫn có thể theo dõi lại).
+      if (!state.follows.some(([follower, id]) => follower === target && id === user)) fail('Người này không theo dõi bạn.', 404)
+      state.follows = state.follows.filter(([follower, id]) => !(follower === target && id === user))
     } else if (action === 'image-poll-create') {
       const imageUrls = ids(body.imageUrls, 3)
       if (imageUrls.length < 2 || imageUrls.some(url => !url.startsWith('/uploads/'))) fail('Chọn 2–3 ảnh để tạo bình chọn.')
-      const hours = Number(body.hours); if (![1, 24, 72].includes(hours)) fail('Thời hạn không hợp lệ.')
+      const hours = parsePollHours(body.hours)
       const visibility = body.visibility
       if (visibility !== 'friends' && visibility !== 'groups' && visibility !== 'public') fail('Quyền xem bình chọn không hợp lệ.')
       const groupIds = ids(body.groupIds ?? [])
@@ -651,11 +700,11 @@ export class PostgresSocialStore implements SocialService {
       state.polls.push(poll); for (const id of recipients) this.notice(state, id, user, 'poll', poll.id)
     } else if (action === 'poll-create') {
       const outfitIds = ids(body.outfitIds, 3)
-      if (!outfitIds.length || outfitIds.some(id => !this.ownerOutfits(context, user).some(outfit => outfit.id === id))) fail('Chọn 1–3 outfit của bạn.')
-      const recipients = ids(body.recipientIds)
-      if (!recipients.length || recipients.some(id => !this.friend(state, user, id))) fail('Người nhận phải là bạn bè hiện tại.')
-      const hours = Number(body.hours); if (![1, 24, 72].includes(hours)) fail('Thời hạn không hợp lệ.')
-      const poll: Poll = { id: randomUUID(), ownerId: user, title: str(body.title, 120) || 'Mình nên chọn bộ nào?', outfitIds, groupIds: [], recipients, votes: {}, createdAt: Date.now(), expiresAt: Date.now() + hours * 3600000, closed: false, winnerId: null, notified: false }
+      if (outfitIds.length < 2 || outfitIds.some(id => !this.ownerOutfits(context, user).some(outfit => outfit.id === id))) fail('Chọn 2–3 outfit của bạn.')
+      const hours = parsePollHours(body.hours)
+      const followers = state.follows.filter(([follower, creator]) => creator === user && !this.blocked(state, user, follower)).map(([follower]) => follower)
+      const { recipients, visibility } = resolvePollAudience(body, { friends: this.friends(state, user), followers, ids: value => ids(value) })
+      const poll: Poll = { id: randomUUID(), ownerId: user, title: str(body.title ?? '', 120) || 'Mình nên chọn bộ nào?', outfitIds, visibility, groupIds: [], recipients, votes: {}, createdAt: Date.now(), expiresAt: Date.now() + hours * 3600000, closed: false, winnerId: null, notified: false }
       state.polls.push(poll); for (const id of recipients) this.notice(state, id, user, 'poll', poll.id)
     } else if (['vote', 'poll-close', 'poll-delete', 'poll-winner'].includes(action)) {
       const poll = state.polls.find(item => item.id === body.id && this.visiblePoll(state, context, item, user)) ?? fail('Bình chọn không khả dụng.', 404)
@@ -671,7 +720,7 @@ export class PostgresSocialStore implements SocialService {
         if (action === 'poll-close') poll.closed = true
         if (action === 'poll-winner') {
           if (!poll.closed && poll.expiresAt > Date.now()) fail('Đóng bình chọn trước khi lưu outfit thắng.')
-          const counts = poll.outfitIds.map(id => ({ id, count: Object.entries(poll.votes).filter(([voter, outfit]) => outfit === id && this.friend(state, user, voter)).length }))
+          const voters = this.activeRecipients(state, poll); const counts = poll.outfitIds.map(id => ({ id, count: Object.entries(poll.votes).filter(([voter, outfit]) => outfit === id && voters.includes(voter)).length }))
           const max = Math.max(...counts.map(item => item.count)); const id = str(body.outfitId)
           if (max === 0 || !counts.some(item => item.id === id && item.count === max)) fail('Hãy chọn một outfit có nhiều phiếu nhất.')
           poll.winnerId = id
@@ -698,10 +747,10 @@ export class PostgresSocialStore implements SocialService {
     for (const profile of after.profiles) {
       const old = oldProfiles.get(profile.id)
       if (!old) continue
-      if (old.username !== profile.username || old.avatar !== profile.avatar || old.birthDate !== profile.birthDate || old.inviteCode !== profile.inviteCode || old.invitePolicy !== profile.invitePolicy || old.defaultVisibility !== profile.defaultVisibility) {
+      if (old.username !== profile.username || old.avatar !== profile.avatar || old.birthDate !== profile.birthDate || old.inviteCode !== profile.inviteCode || old.invitePolicy !== profile.invitePolicy || old.defaultVisibility !== profile.defaultVisibility || old.profileVisibility !== profile.profileVisibility) {
         await client.query(
-          'UPDATE social_profiles SET username=$2, avatar=$3, birth_date=$4::date, invite_code=$5, invite_policy=$6, default_visibility=$7 WHERE user_id=$1',
-          [profile.id, profile.username, profile.avatar, profile.birthDate, profile.inviteCode, profile.invitePolicy, profile.defaultVisibility])
+          'UPDATE social_profiles SET username=$2, avatar=$3, birth_date=$4::date, invite_code=$5, invite_policy=$6, default_visibility=$7, profile_visibility=$8 WHERE user_id=$1',
+          [profile.id, profile.username, profile.avatar, profile.birthDate, profile.inviteCode, profile.invitePolicy, profile.defaultVisibility, profile.profileVisibility])
       }
     }
 

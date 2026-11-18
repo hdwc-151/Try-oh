@@ -1,22 +1,25 @@
+import compression from 'compression'
 import express, { type ErrorRequestHandler } from 'express'
 import { randomUUID } from 'node:crypto'
 import multer from 'multer'
-import type { GarmentRepository } from './storage/garment-repository.js'
+import type { GarmentRepository } from './garments/garment-repository.js'
 import type { ImageStorage } from './storage/image-storage.js'
-import type { UserDataRepository } from './storage/user-data-repository.js'
-import { createGarmentRouter } from './routes/garments.js'
-import { createUserDataRouter } from './routes/user-data.js'
-import { createGenerationRouter } from './routes/generations.js'
-import { createMockImageRouter } from './routes/mock-images.js'
+import type { UserDataRepository } from './user-data/user-data-repository.js'
+import { createGarmentRouter } from './garments/router.js'
+import { createUserDataRouter } from './user-data/router.js'
+import { createGenerationRouter } from './generations/router.js'
+import { createMockImageRouter } from './providers/mock-images-router.js'
 import type { ImageProvider } from './providers/image-provider.js'
 import { ImageProviderError } from './providers/image-provider-error.js'
 import type { AuthBackend } from './auth/auth-backend.js'
 import { AuthError } from './auth/auth-service.js'
 import { createAuthRouter, createRequireAuth, SESSION_COOKIE } from './auth/auth-http.js'
+import type { OAuthStateStore } from './auth/oauth-store.js'
 import { createGoogleOAuth } from './auth/google-oauth.js'
-import { GarmentExtractorService } from './services/garment-extractor.js'
-import { AiQueueBusyError } from './services/ai-concurrency.js'
+import { GarmentExtractorService } from './garments/garment-extractor.js'
+import { AiQueueBusyError } from './providers/ai-concurrency.js'
 import { ImmediateStorageCleanup, type StorageCleanup } from './storage/storage-cleanup.js'
+import { isThumbnailKey, isThumbnailWidth, ThumbnailService } from './storage/thumbnails.js'
 import type { SocialService } from './social/social-service.js'
 import { createSocialRouter } from './social/router.js'
 import { runtimeConfig } from './config/runtime-config.js'
@@ -36,8 +39,11 @@ import { MemoryPlanRepository } from './plans/memory-plan-repository.js'
 import { createPlanRouter } from './plans/router.js'
 import type { BillingService } from './billing/billing-service.js'
 import { createBillingRouter, createBillingWebhookRouter } from './billing/router.js'
-import { generationIdempotency } from './http/generation-idempotency.js'
+import { generationIdempotency, generationReceipt } from './http/generation-idempotency.js'
 import { MemoryGenerationRequestStore, type GenerationRequestStore } from './services/generation-requests.js'
+import { LivePreviewService } from './live-preview/service.js'
+import { MemoryLivePreviewRepository } from './live-preview/repository.js'
+import { createLivePreviewRouter } from './live-preview/router.js'
 
 export function createApp(
   repository: GarmentRepository,
@@ -57,17 +63,29 @@ export function createApp(
   readinessCheck?: () => Promise<void>,
   storageCleanup?: StorageCleanup,
   generationRequests: GenerationRequestStore = new MemoryGenerationRequestStore(),
+  livePreviewService?: LivePreviewService,
+  oauthStateStore?: OAuthStateStore,
 ) {
   const cleanup = storageCleanup ?? new ImmediateStorageCleanup(images)
   const app = express()
   const signedImageTtlSeconds = Math.min(3_600, Math.max(60, Number(process.env.R2_SIGNED_READ_TTL_SECONDS ?? 300) || 300))
   const ownImageKeyRequests = new Map<string, Promise<Set<string>>>()
+  const thumbnails = new ThumbnailService(images)
+  const thumbnailWaitMs = Number(process.env.THUMBNAIL_WAIT_MS ?? 1500)
   const sharedRateLimits = rateLimitStore ?? new MemoryRateLimitStore()
   const plans = planService ?? new PlanService(new MemoryPlanRepository())
   const credits = creditService ?? new CreditService(new MemoryCreditRepository(), plans)
+  // Without a configured service the routes still answer, reporting the feature as disabled.
+  const livePreview = livePreviewService ?? new LivePreviewService(new MemoryLivePreviewRepository(), plans, repository, images, null)
   app.disable('x-powered-by')
   if (runtimeConfig.trustProxyHops) app.set('trust proxy', runtimeConfig.trustProxyHops)
   app.use(setSecurityHeaders)
+  // JSON và JS/CSS nén gzip/brotli trước khi gửi (danh sách, snapshot mạng xã hội nhỏ đi 70–90%).
+  // Ảnh đã là định dạng nén nên bỏ qua.
+  app.use(compression({
+    threshold: 1024,
+    filter: (request, response) => !request.path.startsWith('/uploads/') && compression.filter(request, response),
+  }))
   app.use((request, response, next) => {
     const startedAt = performance.now()
     const incomingId = request.get('x-request-id')
@@ -170,10 +188,10 @@ export function createApp(
     await cleanup.enqueue(imageKeys, 'account_deleted')
     imageProvider.clearCache?.()
   }
-  // Google sends people back to this server, not to Supabase, so its account chooser
-  // shows this site's domain. Absent credentials simply leave the button hidden.
+  // Google sends people back to this server, not to Supabase, so its consent
+  // screen shows this site's domain. Absent credentials simply leave the button hidden.
   const googleOAuth = createGoogleOAuth(new URL('/api/auth/oauth/callback', runtimeConfig.appBaseUrl).toString())
-  app.use('/api/auth', createAuthRouter(authService, secureCookies, runtimeConfig.authSessionDays, decorateUser, sharedRateLimits, deleteAccountData, googleOAuth))
+  app.use('/api/auth', createAuthRouter(authService, secureCookies, runtimeConfig.authSessionDays, decorateUser, sharedRateLimits, deleteAccountData, googleOAuth, oauthStateStore))
   const requireAuth = createRequireAuth(authService, secureCookies, runtimeConfig.authSessionDays, decorateUser)
 
   const getOwnImageKeys = (userId: string) => {
@@ -202,26 +220,10 @@ export function createApp(
     return request
   }
 
-  // Positive access decisions are cached briefly: a page full of thumbnails would
-  // otherwise re-check the same keys on every render. Browsers already cache the
-  // signed redirect for longer than this, so revocation latency is unchanged.
-  const imageAccessCache = new Map<string, number>()
-  const IMAGE_ACCESS_TTL_MS = 30_000
-  const canReadImage = async (userId: string, key: string): Promise<boolean> => {
-    const cacheKey = `${userId}\u0000${key}`
-    const cachedUntil = imageAccessCache.get(cacheKey)
-    if (cachedUntil && cachedUntil > Date.now()) return true
-    // The social store checks the user's own images too, with indexed queries in
-    // PostgreSQL, so the full per-user key list is only needed without it.
-    const allowed = social
-      ? await social.canReadImage(userId, key)
-      : (await getOwnImageKeys(userId)).has(key)
-    if (allowed) {
-      if (imageAccessCache.size >= 50_000) imageAccessCache.delete(imageAccessCache.keys().next().value as string)
-      imageAccessCache.set(cacheKey, Date.now() + IMAGE_ACCESS_TTL_MS)
-    }
-    return allowed
-  }
+  // Check the current sharing policy before signing each URL.
+  const canReadImage = async (userId: string, key: string): Promise<boolean> => social
+    ? social.canReadImage(userId, key)
+    : (await getOwnImageKeys(userId)).has(key)
 
   app.get('/uploads/:key', requireAuth, async (request, response, next) => {
     try {
@@ -237,24 +239,40 @@ export function createApp(
         response.status(400).end()
         return
       }
-      if (!(await canReadImage(request.authUser.id, key))) {
+      // Ảnh thu nhỏ chỉ được xin qua `?w=` trên khoá gốc, nên quyền xem luôn kiểm trên ảnh gốc.
+      if (isThumbnailKey(key) || !(await canReadImage(request.authUser.id, key))) {
         response.status(404).end()
         return
+      }
+      response.vary('Authorization')
+      response.vary('Cookie')
+      const width = request.query.w
+      // true khi xin ảnh thu nhỏ nhưng phải trả tạm ảnh gốc: cache ngắn để lần sau lấy được bản nhỏ.
+      let servedFallback = false
+      if (isThumbnailWidth(width) && thumbnails.supported) {
+        try {
+          const thumbnail = await thumbnails.ensureWithin(key, Number(width) as Parameters<ThumbnailService['ensure']>[1], thumbnailWaitMs)
+          if (thumbnail) key = thumbnail
+          else servedFallback = true
+        } catch (error) {
+          servedFallback = true
+          // Không tạo được (ảnh gốc hỏng, storage lỗi): vẫn trả ảnh gốc thay vì làm vỡ ảnh.
+          console.warn('[thumbnail] fallback to original:', error instanceof Error ? error.message : 'Unknown error')
+        }
       }
       // Normal display traffic goes straight to R2. The explicit proxy mode is reserved
       // for the rare browser-side image processing path that needs a same-origin response.
       if (images.createReadUrl && (images.isDirectReadReady?.() ?? true) && request.query.proxy !== '1') {
         try {
           const signedUrl = await images.createReadUrl(key, signedImageTtlSeconds)
-          response.setHeader('Cache-Control', `private, max-age=${Math.max(30, signedImageTtlSeconds - 30)}`)
-          response.setHeader('Vary', 'Authorization, Cookie')
+          response.setHeader('Cache-Control', servedFallback ? 'private, max-age=30' : `private, max-age=${Math.max(30, signedImageTtlSeconds - 30)}`)
           response.redirect(302, signedUrl)
           return
         } catch {
           // Availability wins over the optimization: stream the image if URL signing fails.
         }
       }
-      response.setHeader('Cache-Control', 'private, max-age=86400, immutable')
+      response.setHeader('Cache-Control', servedFallback ? 'private, max-age=30' : 'private, max-age=86400, immutable')
       if (images.openStream) {
         const image = await images.openStream(key)
         response.type(image.mimeType)
@@ -277,7 +295,13 @@ export function createApp(
   if (billingService) app.use('/api/billing', requireAuth, createBillingRouter(billingService, sharedRateLimits))
   app.use('/api/plans', requireAuth, createPlanRouter(plans))
   // Retry receipts bypass both AI rate limits and the daily spend ceiling.
+  app.get('/api/generations/receipt', requireAuth, generationReceipt(generationRequests))
   app.post('/api/generations/angles/:angle', requireAuth, generationIdempotency(generationRequests))
+  app.use('/api/live-preview', requireAuth, createLivePreviewRouter(livePreview, {
+    rateLimits: sharedRateLimits,
+    dailyLimit: runtimeConfig.livePreviewDailyLimit,
+    appOrigin: new URL(runtimeConfig.appBaseUrl).origin,
+  }))
   // Global circuit breaker for paid AI calls, shared across instances through the
   // rate-limit store. Disabled unless AI_DAILY_REQUEST_LIMIT is set.
   if (runtimeConfig.aiDailyRequestLimit) {

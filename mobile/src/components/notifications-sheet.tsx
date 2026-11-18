@@ -23,12 +23,16 @@ export function timeAgo(timestamp: number, now = Date.now()) {
   return new Date(timestamp).toLocaleDateString('vi-VN');
 }
 
-/** Danh sách thông báo mở từ chuông ở Trang chủ; chạm lời mời kết bạn để tới tab Khám phá. */
-export function NotificationsSheet({ visible, notifications, onClose, onOpenFriends }: {
+/**
+ * Danh sách thông báo mở từ chuông ở Trang chủ. Lời mời kết bạn mở tab Khám phá; bình chọn và kết quả
+ * mở màn bình chọn (đây là lối vào chính để quẹt chọn giúp bạn bè).
+ */
+export function NotificationsSheet({ visible, notifications, onClose, onOpenFriends, onOpenPolls }: {
   visible: boolean;
   notifications: SocialNotification[];
   onClose: () => void;
   onOpenFriends: () => void;
+  onOpenPolls: () => void;
 }) {
   const brand = useBrandColors();
   const queryClient = useQueryClient();
@@ -65,8 +69,8 @@ export function NotificationsSheet({ visible, notifications, onClose, onOpenFrie
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={(item.read ? '' : 'Chưa đọc. ') + item.text}
-              onPress={() => { if (item.kind === 'request') onOpenFriends(); }}
-              style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md, borderTopWidth: index === 0 ? 0 : 1, borderTopColor: colors.separator, backgroundColor: pressed && item.kind === 'request' ? colors.groupedBackground : 'transparent' })}>
+              onPress={() => { if (item.kind === 'request') onOpenFriends(); else onOpenPolls(); }}
+              style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md, borderTopWidth: index === 0 ? 0 : 1, borderTopColor: colors.separator, backgroundColor: pressed ? colors.groupedBackground : 'transparent' })}>
               <View style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: item.read ? colors.groupedBackground : brand.secondary }}>
                 <AppIcon name={item.kind === 'request' ? 'people' : 'sparkles'} size={20} color={item.read ? colors.secondaryLabel : brand.accent}/>
               </View>
@@ -75,7 +79,7 @@ export function NotificationsSheet({ visible, notifications, onClose, onOpenFrie
                 <AppText variant="caption">{timeAgo(item.createdAt)}</AppText>
               </View>
               {!item.read && <View accessibilityElementsHidden style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: brand.sparkle }}/>}
-              {item.kind === 'request' && <AppIcon name="chevronRight" size={18} color={colors.secondaryLabel}/>}
+              <AppIcon name="chevronRight" size={18} color={colors.secondaryLabel}/>
             </Pressable>
           </Animated.View>)}
         </View>}
