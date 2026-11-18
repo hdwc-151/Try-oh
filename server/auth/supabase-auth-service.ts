@@ -9,7 +9,7 @@ import type { UserRole } from '../admin/types.js'
  * provider sends (Google: `full_name` / `name`), then the email's local part. Matches
  * `handle_new_auth_user()` (migration 010) so the API and `profiles` agree.
  */
-export const displayNameFromMetadata = (metadata: Record<string, unknown> | undefined, email: string): string => {
+const displayNameFromMetadata = (metadata: Record<string, unknown> | undefined, email: string): string => {
   for (const key of ['display_name', 'full_name', 'name']) {
     const value = metadata?.[key]
     if (typeof value === 'string' && value.trim().length >= 2) return value.trim().slice(0, 50)
@@ -70,6 +70,7 @@ const validate = (email: string, displayName: string, password: string): void =>
     throw new AuthError(400, 'Mật khẩu phải từ 8 đến 128 ký tự.')
   }
 }
+
 
 const AUTH_REQUEST_TIMEOUT_MS = 10_000
 const TOKEN_CACHE_TTL_MS = 60_000

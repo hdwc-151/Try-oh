@@ -2,7 +2,7 @@
 import express from 'express'
 import type { AddressInfo } from 'node:net'
 import { describe, expect, it } from 'vitest'
-import { generationIdempotency } from './generation-idempotency.js'
+import { generationIdempotency, generationReceipt } from './generation-idempotency.js'
 import { MemoryGenerationRequestStore } from '../services/generation-requests.js'
 
 describe('AI HTTP idempotency', () => {
@@ -18,7 +18,9 @@ describe('AI HTTP idempotency', () => {
     let started!: () => void
     const ready = new Promise<void>(done => { started = done })
     let calls = 0
-    app.post('/generate', generationIdempotency(new MemoryGenerationRequestStore()), async (_request, response) => {
+    const store = new MemoryGenerationRequestStore()
+    app.get('/generate', generationReceipt(store))
+    app.post('/generate', generationIdempotency(store), async (_request, response) => {
       calls += 1
       started()
       await gate
@@ -31,6 +33,9 @@ describe('AI HTTP idempotency', () => {
       headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key, 'X-Test-User': user },
       body: JSON.stringify(body),
     })
+    const readReceipt = (user = 'user-a') => fetch(url, {
+      headers: { 'Idempotency-Key': 'request-0001', 'X-Test-User': user },
+    })
     try {
       const pending = send()
       await ready
@@ -38,9 +43,14 @@ describe('AI HTTP idempotency', () => {
       expect(duplicate.status).toBe(409)
       expect(await duplicate.json()).toMatchObject({ code: 'generation_in_progress' })
       expect(calls).toBe(1)
+      expect((await readReceipt()).status).toBe(202)
+      expect((await readReceipt('user-b')).status).toBe(404)
       resolve()
       const original = await pending
       const originalBody = await original.json()
+      const receipt = await readReceipt()
+      expect(receipt.headers.get('Cache-Control')).toBe('no-store')
+      expect(await receipt.json()).toEqual({ status: 200, body: originalBody })
       const replay = await send()
       expect(replay.headers.get('Idempotency-Replayed')).toBe('true')
       expect(await replay.json()).toEqual(originalBody)

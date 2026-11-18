@@ -13,6 +13,7 @@ export type GenerateImageInput = {
   angle: TryOnAngle
   referenceImageUrl?: string
   preservePose?: boolean
+  keepBackground?: boolean
 }
 
 export type GeneratedImage = {

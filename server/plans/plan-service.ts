@@ -12,7 +12,7 @@ export class PlanService {
     if (user.role === 'admin') {
       return {
         planId: 'max', planName: 'Admin', unlimited: true,
-        entitlements: { imageCredits: ADMIN_LIMIT, wardrobeItems: ADMIN_LIMIT, savedOutfits: ADMIN_LIMIT, selectedGarments: 8 },
+        entitlements: { imageCredits: ADMIN_LIMIT, wardrobeItems: ADMIN_LIMIT, savedOutfits: ADMIN_LIMIT, selectedGarments: 8, livePreviewSessions: ADMIN_LIMIT, livePreviewSeconds: 10, livePreviewFastMode: true },
       }
     }
     const planId = await this.repository.getPlan(user.id) ?? 'free'

@@ -8,7 +8,10 @@
     "scheme": "tryoh",
     "userInterfaceStyle": "light",
     "ios": {
-      "bundleIdentifier": "com.hdwc151.tryoh"
+      "bundleIdentifier": "com.hdwc151.tryoh",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -18,7 +21,18 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.hdwc151.tryoh"
+      "package": "com.hdwc151.tryoh",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.CAMERA",
+        "android.permission.INTERNET",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.WAKE_LOCK"
+      ],
+      "blockedPermissions": [
+        "android.permission.SYSTEM_ALERT_WINDOW"
+      ]
     },
     "web": {
       "output": "server",
@@ -39,7 +53,30 @@
         "expo-image-picker",
         {
           "photosPermission": "Try-oh cần truy cập thư viện ảnh để bạn chọn ảnh đại diện, ảnh toàn thân và ảnh món đồ.",
-          "cameraPermission": "Try-oh cần dùng camera để bạn chụp ảnh đại diện."
+          "cameraPermission": "Try-oh cần dùng camera để bạn chụp ảnh và thử đồ trực tiếp."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Try-oh cần dùng camera để quét mã QR kết bạn và thử đồ trực tiếp.",
+          "recordAudioAndroid": false
+        }
+      ],
+      "@livekit/react-native-expo-plugin",
+      [
+        "@config-plugins/react-native-webrtc",
+        {
+          "cameraPermission": "Try-oh cần dùng camera để bạn chụp ảnh và thử đồ trực tiếp.",
+          "microphonePermission": "Try-oh không ghi âm. Quyền này chỉ do thành phần video trực tiếp yêu cầu."
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "extraProguardRules": "# @livekit/react-native-webrtc references Chromium's JNI Zero classes but does not\n# ship them, so R8 stops on \"missing class\". It only needs to be told not to warn.\n-dontwarn livekit.org.jni_zero.**\n# WebRTC and LiveKit classes are reached from native code, so R8 cannot see the uses.\n-keep class livekit.org.jni_zero.** { *; }\n-keep class livekit.org.webrtc.** { *; }\n-keep class com.livekit.** { *; }\n"
+          }
         }
       ]
     ],

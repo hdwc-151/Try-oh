@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { KeyboardAvoidingView, Modal as NativeModal, Platform, Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
+import { KeyboardAvoidingView, Modal as NativeModal, Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
 import { GestureDetector, GestureHandlerRootView, usePanGesture } from 'react-native-gesture-handler';
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -83,7 +83,7 @@ export function BottomSheet({ visible, title, onClose, onClosed, children, dismi
   return (
     <Modal visible={mounted} onRequestClose={requestClose}>
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, justifyContent: 'flex-end' }}>
+        <KeyboardAvoidingView behavior="padding" style={{ flex: 1, justifyContent: 'flex-end' }}>
           <Animated.View style={[{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: 'rgba(20, 26, 60, 0.45)' }, backdropStyle]}>
             <Pressable accessibilityRole="button" accessibilityLabel="Đóng" onPress={requestClose} style={{ flex: 1 }}/>
           </Animated.View>

@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Image } from 'expo-image';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState, type ReactNode } from 'react';
 import { ScrollView, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -36,6 +36,15 @@ export function HomeScreen() {
     setSegment(next);
     setVisited((current) => current.includes(next) ? current : [...current, next]);
   };
+  // Màn khác (vd. dòng "Tủ đồ" ở trang Cá nhân) mở thẳng một mục: /home?segment=wardrobe&t=<mốc thời gian>.
+  // `t` đổi mỗi lần bấm, nên bấm lại vẫn chuyển mục dù người dùng đã tự đổi sang mục khác.
+  const params = useLocalSearchParams<{ segment?: string; t?: string }>();
+  const [handledRequest, setHandledRequest] = useState<string | undefined>(undefined);
+  if (typeof params.t === 'string' && params.t !== handledRequest) {
+    setHandledRequest(params.t);
+    const requested = segments.find((item) => item.value === params.segment)?.value;
+    if (requested) open(requested);
+  }
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: colors.background }}>
       <HomeHeader />
@@ -54,7 +63,7 @@ export function HomeScreen() {
         />
       </ScrollView>
       <View collapsable={false} style={{ flex: 1 }}>
-        <Pane active={segment === 'try-on'}><TryOnScreen onOpenWardrobe={() => open('wardrobe')} /></Pane>
+        <Pane active={segment === 'try-on'}><TryOnScreen active={segment === 'try-on'} onOpenWardrobe={() => open('wardrobe')} /></Pane>
         {visited.includes('wardrobe') && <Pane active={segment === 'wardrobe'}><WardrobeScreen fixedMode="garments" /></Pane>}
         {visited.includes('shop') && <Pane active={segment === 'shop'}><ShopComingSoon /></Pane>}
       </View>
@@ -113,7 +122,7 @@ function HomeHeader() {
           onPress={() => router.navigate('/(tabs)/profile')}
           style={{ width: 36, height: 36, borderRadius: 18, borderWidth: 1.5, borderColor: brand.primary, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
           {avatar
-            ? <Image source={protectedImageSource(avatar, session?.access_token)} style={{ width: 36, height: 36 }} contentFit="cover" transition={200} />
+            ? <Image source={protectedImageSource(avatar, session?.access_token, 160)} style={{ width: 36, height: 36 }} contentFit="cover" transition={200} />
             : <AppIcon name="person" size={28} color={brand.primary} />}
         </PressableScale>
       </View>
@@ -122,6 +131,7 @@ function HomeHeader() {
         notifications={notifications}
         onClose={() => setNotificationsOpen(false)}
         onOpenFriends={() => { setNotificationsOpen(false); router.navigate('/(tabs)/friends'); }}
+        onOpenPolls={() => { setNotificationsOpen(false); router.push('/polls'); }}
       />
     </View>
   );
@@ -136,7 +146,7 @@ function ShopComingSoon() {
       </View>
       <AppText variant="title" style={{ textAlign: 'center' }}>Shop sắp ra mắt</AppText>
       <AppText variant="subhead" style={{ textAlign: 'center', maxWidth: 320 }}>
-        Try-oh sẽ gợi ý sản phẩm hợp gu bạn từ các KOL/KOC trên Shopee, TikTok Shop và shop ngoài sàn — thử ngay trên ảnh của bạn trước khi mua.
+        Try-oh sẽ gợi ý sản phẩm hợp với bạn từ các KOL/KOC trên các Shop — thử ngay trên ảnh của bạn trước khi mua.
       </AppText>
     </ScrollView>
   );

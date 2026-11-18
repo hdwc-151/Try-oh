@@ -2,7 +2,7 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthStore, type PublicUser } from '../auth/auth-store.js'
 import { AdminService } from './admin-service.js'
 import { SqliteAdminRepository } from './sqlite-admin-repository.js'
@@ -64,5 +64,12 @@ describe('AdminService authorization',()=>{
     await expect(service.updateUser(admin,member.id,{subscriptionPlan:'plus'})).resolves.toMatchObject({subscriptionPlan:'plus',creditBalance:60})
     const audit=await service.audit(admin)
     expect(audit[0]).toMatchObject({action:'user.plan_changed',targetId:'member',details:{from:'free',to:'plus'}})
+  })
+  it('shares one profile sync between concurrent requests of the same user',async()=>{
+    const fresh=new AdminService(repository,['owner@example.com'])
+    const sync=vi.spyOn(repository,'syncUser')
+    const users=await Promise.all(Array.from({length:6},()=>fresh.resolveAuthenticatedUser(member)))
+    expect(sync).toHaveBeenCalledTimes(1)
+    expect(new Set(users.map(user=>user.id))).toEqual(new Set(['member']))
   })
 })

@@ -13,8 +13,8 @@ import { AuthStore } from './auth/auth-store.js'
 import { MockImageProvider } from './providers/mock-image-provider.js'
 import type { ImageStorage } from './storage/image-storage.js'
 import { LocalImageStorage } from './storage/local-image-storage.js'
-import { SqliteGarmentRepository } from './storage/sqlite-garment-repository.js'
-import { SqliteUserDataRepository } from './storage/sqlite-user-data-repository.js'
+import { SqliteGarmentRepository } from './garments/sqlite-garment-repository.js'
+import { SqliteUserDataRepository } from './user-data/sqlite-user-data-repository.js'
 
 const MUTATION = { 'X-Fitting-Room-Request': '1' }
 
@@ -39,6 +39,8 @@ describe('HTTP API', () => {
     const images: ImageStorage = {
       save: (buffer, mimeType) => disk.save(buffer, mimeType),
       read: (key) => disk.read(key),
+      saveWithKey: (key, buffer, mimeType) => disk.saveWithKey(key, buffer, mimeType),
+      exists: (key) => disk.exists(key),
       publicUrl: (key) => disk.publicUrl(key),
       delete: async (key) => {
         if (failDeletes) throw new Error('storage unavailable')
@@ -99,6 +101,35 @@ describe('HTTP API', () => {
   it('ignores a cookie with a broken escape sequence instead of failing the request', async () => {
     const response = await fetch(`${baseUrl}/api/garments`, { headers: { Cookie: 'fitting_room_session=%E0%A4%A' } })
     expect(response.status).toBe(401)
+  })
+
+  it('serves a cached WebP thumbnail for ?w= and never exposes thumbnail keys directly', async () => {
+    const big = await sharp({ create: { width: 640, height: 960, channels: 3, background: '#336699' } }).png().toBuffer()
+    const form = new FormData()
+    form.set('personImage', new Blob([new Uint8Array(big)], { type: 'image/png' }), 'photo.png')
+    const uploaded = await fetch(`${baseUrl}/api/person-image`, { method: 'POST', headers: { ...MUTATION, Cookie: cookie }, body: form })
+    const { imageUrl } = await uploaded.json() as { imageUrl: string }
+
+    const thumb = await fetch(`${baseUrl}${imageUrl}?w=160`, { headers: { Cookie: cookie } })
+    expect(thumb.status).toBe(200)
+    expect(thumb.headers.get('content-type')).toContain('image/webp')
+    expect((await sharp(Buffer.from(await thumb.arrayBuffer())).metadata()).width).toBe(160)
+    // A second request reuses the stored file.
+    expect((await fetch(`${baseUrl}${imageUrl}?w=160`, { headers: { Cookie: cookie } })).status).toBe(200)
+    // Unknown widths fall back to the original.
+    const original = await fetch(`${baseUrl}${imageUrl}?w=999`, { headers: { Cookie: cookie } })
+    expect((await sharp(Buffer.from(await original.arrayBuffer())).metadata()).width).toBeGreaterThan(160)
+
+    const key = decodeURIComponent(imageUrl.split('/uploads/')[1]!)
+    const thumbKey = key.replace(/\.[a-z0-9]+$/i, '') + '__w160.webp'
+    expect((await fetch(`${baseUrl}/uploads/${encodeURIComponent(thumbKey)}`, { headers: { Cookie: cookie } })).status).toBe(404)
+    // Another account cannot read the thumbnail either.
+    const other = await fetch(`${baseUrl}/api/auth/register`, {
+      method: 'POST', headers: { ...MUTATION, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'other@example.com', displayName: 'Other', password: 'password-123' }),
+    })
+    const otherCookie = other.headers.getSetCookie().map(value => value.split(';')[0]).join('; ')
+    expect((await fetch(`${baseUrl}${imageUrl}?w=160`, { headers: { Cookie: otherCookie } })).status).toBe(404)
   })
 
   it('keeps the new person photo when removing the old one fails', async () => {

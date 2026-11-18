@@ -125,7 +125,7 @@ function getPlacementHint(name: string, category: string): string {
     lower.includes('vớ') ||
     lower.includes('socks')
   ) {
-    return 'feet / ankles'
+    return 'both feet / ankles, worn as a matching left-and-right pair'
   }
 
   // Coarse category fallback. This does NOT define the item's visual identity.
@@ -144,7 +144,8 @@ function getPlacementHint(name: string, category: string): string {
   if (category === 'shoes') {
     // "shoes" here only means foot placement. It must NOT force sandals,
     // slippers, boots, heels, sneakers, etc. to become generic shoes.
-    return 'feet'
+    // Product photos often show a single shoe; the person still wears a pair.
+    return 'both feet, worn as one matching left-and-right pair (even if the reference shows only one shoe)'
   }
 
   return 'infer the natural anatomical position from the reference image and item name'
@@ -156,6 +157,8 @@ type TryOnPromptInput = {
   hasReferenceImage: boolean
   garments?: GarmentPromptInfo[]
   preservePose?: boolean
+  /** true: giữ nguyên bối cảnh/nền của ảnh gốc; false: nền studio xám trơn. */
+  keepBackground?: boolean
 }
 
 function buildGarmentDetails(garments?: GarmentPromptInfo[]): string {
@@ -180,7 +183,8 @@ HOW TO INTERPRET EACH ITEM:
 - If a broad internal category conflicts with the reference image or item name, follow the reference image + item name.
 - If the item name and image differ slightly, preserve the actual visible design from the image rather than redesigning it to fit the wording.
 - Keep every supplied item separate, recognizable, and physically plausible.
-- Do not merge, duplicate, replace, or invent items.`
+- Do not merge, duplicate, replace, or invent items.
+- Footwear and socks are always worn as one matching pair: one on the left foot and one on the right foot, mirrored versions of the same design. Never show a single shoe or a bare foot because the reference shows only one shoe.`
 }
 
 export function buildTryOnPrompt({
@@ -189,6 +193,7 @@ export function buildTryOnPrompt({
   hasReferenceImage,
   garments,
   preservePose = true,
+  keepBackground = false,
 }: TryOnPromptInput): string {
   const garmentDetails = buildGarmentDetails(garments)
 
@@ -203,7 +208,7 @@ export function buildTryOnPrompt({
    Use it only to determine where the item belongs anatomically. Never let it transform the item into another clothing/accessory type.
 5. ${
     hasReferenceImage
-      ? 'The FINAL INPUT IMAGE is the previously generated FRONT view. Use it only for continuity of pose, outfit fit, lighting, and studio appearance. If it conflicts with an original garment reference, the original garment reference wins for item appearance.'
+      ? 'The FINAL INPUT IMAGE is the previously generated FRONT view. Use it only for continuity of pose, outfit fit, lighting, and background/scene appearance. If it conflicts with an original garment reference, the original garment reference wins for item appearance.'
       : 'There is no previously generated front-view reference image.'
   }`
 
@@ -241,7 +246,12 @@ BACK-VIEW REQUIREMENTS:
 - If a rear detail is not visible in any reference, infer only physically necessary construction. Do not invent new logos, text, graphics, pockets, straps, or decorative elements.
 - Preserve asymmetrical item placement on the correct anatomical side.
 - Keep hair and accessories in physically natural positions; do not move them merely to expose clothing.
-- Plain light-gray studio background, even studio lighting, realistic shadows, full body visible from head to feet.
+${
+  keepBackground
+    ? `- Keep the SAME background, environment, and scene as the FINAL INPUT IMAGE (the generated front view). The camera stays in place and only the person turns around, so the location, objects, colors, and lighting of the scene must stay the same. Do not replace it with a studio backdrop.
+- Lighting and shadows must stay consistent with that scene. Full body visible from head to feet.`
+    : '- Plain light-gray studio background, even studio lighting, realistic shadows, full body visible from head to feet.'
+}
 
 ${rearPoseInstruction}
 
@@ -305,10 +315,18 @@ ${garmentDetails}
 
 ${rearSpecificInstruction}
 
-SCENE:
+${
+  keepBackground
+    ? `SCENE:
+- Keep the original background, environment, and scene from IMAGE 1 exactly as they are: same location, objects, colors, camera position, and framing.
+- Only the person's outfit changes. Do not replace, blur, clean up, or restyle the background, and do not replace it with a studio backdrop.
+- Match the original lighting direction and color of IMAGE 1, with realistic shadows consistent with that scene.
+- Full body visible from head to feet.`
+    : `SCENE:
 - Plain light-gray studio background.
 - Even studio lighting and realistic shadows.
-- Full body visible from head to feet.
+- Full body visible from head to feet.`
+}
 - Natural fit, realistic folds, correct occlusion, and coherent anatomy.
 
 QUALITY / FAILURE AVOIDANCE:

@@ -5,7 +5,7 @@
 Module admin được tách khỏi auth, social và giao diện người dùng:
 
 - server/admin/: phân quyền, repository SQLite/PostgreSQL, API, audit log và xử lý báo cáo (moderation).
-- src/components/admin/: giao diện quản trị.
+- src/features/admin/: giao diện quản trị.
 - src/services/admin-api.ts: client duy nhất gọi /api/admin/*.
 - supabase/migrations/002_admin_access.sql: role, trạng thái và audit log production.
 - supabase/migrations/004_image_credits.sql: số lượt tạo ảnh trọn đời của từng tài khoản.

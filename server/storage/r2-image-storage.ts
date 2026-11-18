@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { DeleteObjectCommand, GetBucketCorsCommand, GetObjectCommand, PutBucketCorsCommand, PutObjectCommand, S3Client, type CORSRule } from '@aws-sdk/client-s3'
+import { DeleteObjectCommand, GetBucketCorsCommand, GetObjectCommand, HeadObjectCommand, PutBucketCorsCommand, PutObjectCommand, S3Client, type CORSRule } from '@aws-sdk/client-s3'
+import { thumbnailKeysOf } from './thumbnails.js'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import type { ImageStorage, StoredImage } from './image-storage.js'
 import { optimizeImageForStorage } from './optimize-image.js'
@@ -54,6 +55,29 @@ export class R2ImageStorage implements ImageStorage {
       CacheControl: 'private, max-age=86400, immutable',
     }))
     return key
+  }
+
+  async saveWithKey(key: string, buffer: Buffer, mimeType: string): Promise<void> {
+    this.assertKey(key)
+    await this.client.send(new PutObjectCommand({
+      Bucket: this.options.bucket,
+      Key: key,
+      Body: buffer,
+      ContentType: mimeType,
+      CacheControl: 'private, max-age=86400, immutable',
+    }))
+  }
+
+  async exists(key: string): Promise<boolean> {
+    this.assertKey(key)
+    try {
+      await this.client.send(new HeadObjectCommand({ Bucket: this.options.bucket, Key: key }))
+      return true
+    } catch (error) {
+      const status = (error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode
+      if (status === 404 || (error as { name?: string }).name === 'NotFound') return false
+      throw error
+    }
   }
 
   async read(key: string): Promise<StoredImage> {
@@ -134,6 +158,8 @@ export class R2ImageStorage implements ImageStorage {
   async delete(key: string): Promise<void> {
     this.assertKey(key)
     await this.client.send(new DeleteObjectCommand({ Bucket: this.options.bucket, Key: key }))
+    // Ảnh thu nhỏ đi theo ảnh gốc; xoá khoá không tồn tại trên R2 vẫn thành công.
+    await Promise.allSettled(thumbnailKeysOf(key).map(thumb => this.client.send(new DeleteObjectCommand({ Bucket: this.options.bucket, Key: thumb }))))
   }
 
   publicUrl(key: string): string {

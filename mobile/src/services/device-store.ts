@@ -47,3 +47,13 @@ export async function markPendingExtract(baseTotal: number) {
 export async function clearPendingExtract() {
   await authStorage.removeItem(PENDING_EXTRACT_KEY).catch(() => undefined);
 }
+
+const WEATHER_CITY_KEY = 'fitsy.weather-city';
+
+export async function readWeatherCity(): Promise<string | null> {
+  return authStorage.getItem(WEATHER_CITY_KEY).catch(() => null);
+}
+
+export async function writeWeatherCity(id: string) {
+  await authStorage.setItem(WEATHER_CITY_KEY, id).catch(() => undefined);
+}

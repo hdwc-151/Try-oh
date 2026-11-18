@@ -4,6 +4,7 @@ import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { ImageStorage } from './image-storage.js'
 import { optimizeImageForStorage } from './optimize-image.js'
+import { thumbnailKeysOf } from './thumbnails.js'
 
 const extensionByMimeType: Record<string, string> = {
   'image/jpeg': '.jpg',
@@ -31,6 +32,23 @@ export class LocalImageStorage implements ImageStorage {
     const key = `${randomUUID()}${extension}`
     await writeFile(path.join(this.uploadDirectory, key), prepared.buffer)
     return key
+  }
+
+  async saveWithKey(key: string, buffer: Buffer, mimeType: string): Promise<void> {
+    const safeKey = path.basename(key)
+    if (!key || safeKey !== key || !mimeTypeByExtension[path.extname(safeKey).toLowerCase()] || mimeTypeByExtension[path.extname(safeKey).toLowerCase()] !== mimeType) {
+      throw new Error('Khoá ảnh không hợp lệ.')
+    }
+    await writeFile(path.join(this.uploadDirectory, safeKey), buffer)
+  }
+
+  async exists(key: string): Promise<boolean> {
+    try {
+      await stat(path.join(this.uploadDirectory, path.basename(key)))
+      return true
+    } catch {
+      return false
+    }
   }
 
   async read(key: string): Promise<{ buffer: Buffer; mimeType: string }> {
@@ -64,6 +82,8 @@ export class LocalImageStorage implements ImageStorage {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
     }
+    // Ảnh thu nhỏ đi theo ảnh gốc.
+    await Promise.allSettled(thumbnailKeysOf(key).map(thumb => unlink(path.join(this.uploadDirectory, path.basename(thumb)))))
   }
 
   publicUrl(key: string): string {

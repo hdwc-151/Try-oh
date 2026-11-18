@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type ReactNode, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, View } from 'react-native';
+import { ActivityIndicator, Alert, View } from 'react-native';
 
+import { KeyboardScrollView } from '@/components/keyboard-scroll-view';
 import { AppButton } from '@/components/app-button';
 import { AppText } from '@/components/app-text';
 import { Notice } from '@/components/notice';
@@ -17,6 +18,7 @@ import type { SocialSnapshot } from '@/types/api';
 type Feedback = { tone: 'error' | 'success'; text: string } | null;
 type InvitePolicy = SocialSnapshot['me']['invitePolicy'];
 type Visibility = SocialSnapshot['me']['defaultVisibility'];
+type ProfileVisibility = NonNullable<SocialSnapshot['me']['profileVisibility']>;
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -32,6 +34,7 @@ export default function SettingsRoute() {
 
 function SettingsContent({ snapshot }: { snapshot: SocialSnapshot }) {
   const auth = useAuth();
+  const [signingOut, setSigningOut] = useState(false);
   const brand = useBrandColors();
   const queryClient = useQueryClient();
   const metadata = auth.user?.user_metadata ?? {};
@@ -43,6 +46,7 @@ function SettingsContent({ snapshot }: { snapshot: SocialSnapshot }) {
   const [birthDate, setBirthDate] = useState(snapshot.me.birthDate ?? '');
   const [invitePolicy, setInvitePolicy] = useState<InvitePolicy>(snapshot.me.invitePolicy);
   const [defaultVisibility, setDefaultVisibility] = useState<Visibility>(snapshot.me.defaultVisibility);
+  const [profileVisibility, setProfileVisibility] = useState<ProfileVisibility>(snapshot.me.profileVisibility ?? 'friends');
   const [newEmail, setNewEmail] = useState('');
   const [emailPassword, setEmailPassword] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
@@ -58,6 +62,7 @@ function SettingsContent({ snapshot }: { snapshot: SocialSnapshot }) {
     setBirthDate(next.me.birthDate ?? '');
     setInvitePolicy(next.me.invitePolicy);
     setDefaultVisibility(next.me.defaultVisibility);
+    setProfileVisibility(next.me.profileVisibility ?? 'friends');
   };
 
   const updateName = useMutation({
@@ -83,6 +88,7 @@ function SettingsContent({ snapshot }: { snapshot: SocialSnapshot }) {
         birthDate: snapshot.me.birthDate ?? (birthDate || null),
         invitePolicy,
         defaultVisibility,
+        profileVisibility,
       }),
     }),
     onSuccess: (next) => {
@@ -144,6 +150,7 @@ function SettingsContent({ snapshot }: { snapshot: SocialSnapshot }) {
         birthDate: snapshot.me.birthDate,
         invitePolicy,
         defaultVisibility,
+        profileVisibility,
       }),
     }),
     onSuccess: (next) => {
@@ -170,7 +177,7 @@ function SettingsContent({ snapshot }: { snapshot: SocialSnapshot }) {
   const passwordValid = currentPassword.length > 0 && newPassword.length >= 8 && newPassword.length <= 128 && newPassword === confirmPassword;
 
   return (
-    <ScrollView
+    <KeyboardScrollView
       contentInsetAdjustmentBehavior="automatic"
       keyboardShouldPersistTaps="handled"
       contentContainerStyle={{ padding: spacing.md, paddingBottom: spacing.xxl, gap: spacing.md, backgroundColor: colors.background }}>
@@ -244,6 +251,17 @@ function SettingsContent({ snapshot }: { snapshot: SocialSnapshot }) {
             ['friends', 'Bạn bè'],
           ]}
         />
+        <AppText variant="caption" style={{ color: colors.label, fontWeight: '700' }}>Ai được xem trang cá nhân?</AppText>
+        <ChoiceRow
+          value={profileVisibility}
+          onChange={setProfileVisibility}
+          choices={[
+            ['everyone', 'Mọi người'],
+            ['friends', 'Bạn bè'],
+            ['private', 'Chỉ mình tôi'],
+          ]}
+        />
+        {snapshot.me.creator && <AppText variant="caption">Trang của tài khoản KOL/KOC luôn công khai.</AppText>}
         <AppButton title="Lưu quyền riêng tư" loading={savePrivacy.isPending} onPress={() => {
           setPrivacyFeedback(null);
           savePrivacy.mutate();
@@ -286,6 +304,22 @@ function SettingsContent({ snapshot }: { snapshot: SocialSnapshot }) {
           ))}
       </SettingsCard>
 
+      <SettingsCard title="Đăng xuất">
+        <AppText variant="subhead">Bạn có thể đăng nhập lại bất cứ lúc nào.</AppText>
+        <AppButton
+          title="Đăng xuất"
+          variant="secondary"
+          loading={signingOut}
+          onPress={() => Alert.alert('Đăng xuất khỏi Try-oh?', 'Bạn có thể đăng nhập lại bất cứ lúc nào bằng email và mật khẩu.', [
+            { text: 'Huỷ', style: 'cancel' },
+            { text: 'Đăng xuất', style: 'destructive', onPress: () => {
+              setSigningOut(true);
+              void auth.signOut().finally(() => setSigningOut(false));
+            } },
+          ])}
+        />
+      </SettingsCard>
+
       <SettingsCard title="Xóa tài khoản">
         <AppText variant="subhead">Xóa hồ sơ, ảnh, tủ đồ, outfit và nội dung đã đăng. Hành động này không thể hoàn tác.</AppText>
         <AppButton
@@ -302,7 +336,7 @@ function SettingsContent({ snapshot }: { snapshot: SocialSnapshot }) {
           )}
         />
       </SettingsCard>
-    </ScrollView>
+    </KeyboardScrollView>
   );
 }
 

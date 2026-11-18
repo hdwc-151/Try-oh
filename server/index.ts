@@ -1,18 +1,18 @@
 import 'dotenv/config'
 import express from 'express'
 import { createServer as createHttpServer } from 'node:http'
-import sharp from 'sharp'
 import path from 'node:path'
 import { mkdir } from 'node:fs/promises'
 import { createApp } from './app.js'
+import { PostgresOAuthStore } from './auth/oauth-store.js'
 import { LocalImageStorage } from './storage/local-image-storage.js'
 import type { ImageStorage } from './storage/image-storage.js'
-import type { GarmentRepository } from './storage/garment-repository.js'
-import type { UserDataRepository } from './storage/user-data-repository.js'
-import { SqliteGarmentRepository } from './storage/sqlite-garment-repository.js'
-import { SqliteUserDataRepository } from './storage/sqlite-user-data-repository.js'
-import { PostgresGarmentRepository } from './storage/postgres-garment-repository.js'
-import { PostgresUserDataRepository } from './storage/postgres-user-data-repository.js'
+import type { GarmentRepository } from './garments/garment-repository.js'
+import type { UserDataRepository } from './user-data/user-data-repository.js'
+import { SqliteGarmentRepository } from './garments/sqlite-garment-repository.js'
+import { SqliteUserDataRepository } from './user-data/sqlite-user-data-repository.js'
+import { PostgresGarmentRepository } from './garments/postgres-garment-repository.js'
+import { PostgresUserDataRepository } from './user-data/postgres-user-data-repository.js'
 import { createPostgresPool, type PostgresPool } from './storage/postgres.js'
 import { R2ImageStorage } from './storage/r2-image-storage.js'
 import { SupabaseImageStorage } from './storage/supabase-image-storage.js'
@@ -44,15 +44,19 @@ import { SqlitePlanRepository } from './plans/sqlite-plan-repository.js'
 import { BillingService } from './billing/billing-service.js'
 import { PostgresBillingRepository } from './billing/postgres-billing-repository.js'
 import { SqliteBillingRepository } from './billing/sqlite-billing-repository.js'
+import { LivePreviewService } from './live-preview/service.js'
+import { PostgresLivePreviewRepository } from './live-preview/postgres-repository.js'
+import { SqliteLivePreviewRepository } from './live-preview/sqlite-repository.js'
+import { DecartHttpTokenIssuer } from './live-preview/decart-client.js'
 import { PayosGateway } from './billing/payos-gateway.js'
 import { MomoGateway } from './billing/momo-gateway.js'
 import type { PaymentGateway } from './billing/types.js'
 import { ExcelPaymentLedger } from './billing/excel-payment-ledger.js'
 import { PostgresGenerationRequestStore, SqliteGenerationRequestStore, type GenerationRequestStore } from './services/generation-requests.js'
+import { configureSharp } from './storage/sharp-config.js'
+import { withThumbnailWarmup } from './storage/thumbnails.js'
 
-// libvips keeps decoded pixels of recent operations in a cache (50 MB by default).
-// Every upload here is a different image, so the cache only costs memory.
-sharp.cache(false)
+configureSharp()
 
 const port = Number(process.env.PORT ?? 8787)
 const isDevelopment = process.argv.includes('--dev')
@@ -112,8 +116,16 @@ let sqliteDatabasePath: string | undefined
 if (persistenceBackend === 'postgres') {
   postgresPool = createPostgresPool(process.env.DATABASE_URL ?? '')
   await postgresPool.query('SELECT 1')
-  const schema = await postgresPool.query("SELECT to_regclass('public.generation_requests') AS name")
-  if (!schema.rows[0]?.name) throw new Error('Database schema is behind this release. Run npm run db:migrate before starting.')
+  const schema = await postgresPool.query(`
+    SELECT to_regclass('public.generation_requests') IS NOT NULL
+      AND to_regclass('public.live_preview_sessions') IS NOT NULL
+      AND to_regclass('public.oauth_states') IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'social_profiles' AND column_name = 'profile_visibility'
+      ) AS ready
+  `)
+  if (!schema.rows[0]?.ready) throw new Error('Database schema is behind this release. Run npm run db:migrate before starting.')
   repository = new PostgresGarmentRepository(postgresPool)
   userDataRepository = new PostgresUserDataRepository(postgresPool)
 } else if (persistenceBackend === 'sqlite') {
@@ -153,8 +165,14 @@ if (imageStorageBackend === 'r2') {
 } else {
   throw new Error(`IMAGE_STORAGE="${imageStorageBackend}" không được hỗ trợ.`)
 }
+imageStorage = withThumbnailWarmup(imageStorage)
 
 if (authBackend === 'supabase') {
+  // Supabase accounts live in PostgreSQL `profiles`; the SQLite stores only know local
+  // accounts, so every signed-in request would fail with "Máy chủ gặp lỗi".
+  if (persistenceBackend !== 'postgres') {
+    throw new Error('AUTH_BACKEND=supabase cần PERSISTENCE_BACKEND=postgres và DATABASE_URL. Khi chạy local không có database Supabase, đặt AUTH_BACKEND=local (tài khoản lưu trong data/fitting-room.sqlite).')
+  }
   authService = new SupabaseAuthService(
     process.env.SUPABASE_URL ?? '',
     process.env.SUPABASE_PUBLISHABLE_KEY ?? process.env.SUPABASE_ANON_KEY ?? '',
@@ -236,6 +254,16 @@ const billingService = new BillingService(
   appBaseUrl,
   paymentLedger,
 )
+const livePreviewService = new LivePreviewService(
+  persistenceBackend === 'postgres'
+    ? new PostgresLivePreviewRepository(postgresPool!)
+    : new SqliteLivePreviewRepository(sqliteDatabasePath!),
+  planService,
+  repository,
+  imageStorage,
+  runtimeConfig.decartApiKey ? new DecartHttpTokenIssuer(runtimeConfig.decartApiKey) : null,
+  { model: runtimeConfig.decartModel, windowDays: runtimeConfig.livePreviewWindowDays, fastCost: runtimeConfig.livePreviewFastCost },
+)
 const app = createApp(
   repository,
   userDataRepository,
@@ -256,6 +284,9 @@ const app = createApp(
   },
   storageCleanup,
   generationRequests,
+  livePreviewService,
+  // Sign-in state shared through PostgreSQL, so Google can return to any instance.
+  postgresPool ? new PostgresOAuthStore(postgresPool) : undefined,
 )
 const server = createHttpServer(app)
 let closeVite: (() => Promise<void>) | undefined
@@ -332,6 +363,7 @@ const shutdown = async (signal: string) => {
       Promise.resolve(planService.close()),
       Promise.resolve(billingService.close()),
       Promise.resolve(generationRequests.close?.()),
+      Promise.resolve(livePreviewService.close()),
     ])
     await postgresPool?.end().catch(() => undefined)
   }

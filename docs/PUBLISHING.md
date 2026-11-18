@@ -8,6 +8,10 @@ Ngày 12/11/2026 đã tạo schema trong project Supabase `tapzevmhoqnytdkbsing`
 
 Cấu hình mặc định hiện dùng Supabase cho Auth, PostgreSQL và ảnh private; Render chạy web/API. `IMAGE_PROVIDER=mock` chỉ kiểm tra luồng sản phẩm. Muốn dùng AI thật, thêm key ở backend và chọn provider sau khi kiểm tra ảnh thật.
 
+Bản tích hợp VN_VTON thêm migration 013–016. Áp dụng trước khi deploy vì bản mới đọc bảng phiên camera, trạng thái OAuth và quyền hiển thị hồ sơ.
+
+Camera là tính năng tuỳ chọn và cần bản cài có WebRTC. Giữ `DECART_API_KEY` trống khi chạy mock. Khi bật Decart, cấu hình `LIVE_PREVIEW_DAILY_LIMIT` để giới hạn tổng số phiên và xác minh luồng xin quyền trên thiết bị thật.
+
 ### Hai giá trị riêng tư còn cần điền trong Render Environment
 
 | Biến server | Lấy từ Supabase |

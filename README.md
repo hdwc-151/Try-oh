@@ -1,140 +1,80 @@
-# Try-oh — AI Virtual Try-On
+# Try-oh — Thử đồ ảo bằng AI
 
-[CI và kiểm thử](https://github.com/hdwc-151/Try-oh/actions/workflows/ci.yml) · [Phát hành](docs/PUBLISHING.md) · [Database](docs/DATABASE.md) · [Tối ưu AI](docs/AI_OPTIMIZATION.md) · [Nguồn mã](UPSTREAM.md)
+**Tiếng Việt** · [English](README.en.md) · [Mobile](mobile/README.md) · [Phát hành](docs/PUBLISHING.md) · [CI](https://github.com/hdwc-151/Try-oh/actions/workflows/ci.yml)
 
-Try-oh là prototype thử trang phục bằng ảnh: tải ảnh người và quần áo, tạo góc trước/sau, lưu outfit và chia sẻ có kiểm soát. Web và app Expo dùng chung API.
+Try-oh cho phép tải ảnh người và quần áo, tạo ảnh thử góc trước và sau, lưu outfit, chia sẻ và bình chọn. Web React và ứng dụng Android/iOS dùng chung API.
 
-Dự án bắt đầu từ [VN_VTON](https://github.com/NHNam1306/VN_VTON), snapshot 768ea6ecd01e88146b0645d9ebd056d878d4a9f4. Đã đối chiếu đủ 313 file gốc bằng Git blob hash trước khi phát triển riêng. Nguồn chưa có root LICENSE trong snapshot; giữ attribution và chốt quyền phát hành với chủ nguồn.
+## Cần cài gì để chạy demo?
 
-## Trạng thái sản phẩm
+| Cách thử | Thiết bị của người thử | Máy host |
+| --- | --- | --- |
+| Mở link web | Trình duyệt | Web/API ở địa chỉ truy cập được |
+| Quét QR Expo `exp://` | Expo Go trên điện thoại | Metro đang chạy và API truy cập được |
+| Cài Try-oh độc lập | APK trên Android hoặc bản ký cho iPhone | Bản cài đã có bundle. Backend vẫn cần hoạt động |
+| Tự chạy repo | Node.js 24 và npm. Cài Git nếu clone | Web và API chạy cùng tiến trình |
 
-| Phần | Trạng thái |
-| --- | --- |
-| Prototype web | Chạy local bằng SQLite, lưu ảnh local và AI mock, không cần API key |
-| Web/API | React + Vite + Express; có đăng nhập, tủ đồ, tạo ảnh, lịch sử và social |
-| Database production | Adapter Supabase PostgreSQL, RLS/index, migration có lock/checksum/rollback |
-| Ảnh production | Supabase Storage hoặc R2 private; API kiểm tra quyền rồi cấp URL ký ngắn hạn |
-| App Android/iOS | Expo SDK 58; định danh Try-oh riêng, profile preview/production/simulator |
-| AI thật | Có adapter OpenRouter/Gemini; cần key/model khả dụng và kiểm tra bằng ảnh thật |
-| Phát hành store | Có workflow build/submit; chưa có binary ký hoặc lần submit được xác nhận |
-| Public backend | Render + Supabase; cần cấu hình DATABASE_URL và Supabase server key trước khi chạy |
+### Tự chạy web trên Windows
 
-Mock chỉ phục vụ kiểm tra luồng ứng dụng, không mô phỏng chất lượng thử đồ. Ảnh AI không chứng minh quần áo vừa kích cỡ thực tế.
-
-## Chạy nhanh trên Windows
-
-Cài Node.js 24 LTS và Git, rồi mở PowerShell:
+Tải [ZIP](https://github.com/hdwc-151/Try-oh/archive/refs/heads/main.zip) rồi giải nén, hoặc dùng Git:
 
 ~~~powershell
 git clone https://github.com/hdwc-151/Try-oh.git
 cd Try-oh
+~~~
+
+Mở PowerShell tại thư mục gốc có `server/`, `src/`, `mobile/`:
+
+~~~powershell
 npm ci
-Copy-Item .env.example .env
+if (!(Test-Path .env)) { Copy-Item .env.example .env }
 npm run dev
 ~~~
 
-Mở http://127.0.0.1:8787, đăng ký một tài khoản local, tải ảnh người và ít nhất một món đồ. IMAGE_PROVIDER=mock đã được chọn trong file mẫu; không cần mua lượt AI để thử UI.
+Mở [http://127.0.0.1:8787](http://127.0.0.1:8787). Đăng ký tài khoản local, tải ảnh người, thêm một món đồ, chọn món đồ rồi tạo ảnh góc trước. Mặc định bản demo dùng SQLite, ảnh lưu local và AI mock, nên có thể thử luồng mà không cần Supabase hoặc key AI.
 
-Dữ liệu nằm trong data/. Không xoá thư mục này nếu muốn giữ tài khoản/ảnh local. Local auth không gửi email thật; mobile hiện dùng Supabase Auth và cần backend staging tương ứng.
+Trên macOS/Linux, thay dòng sao chép bằng `test -f .env || cp .env.example .env`. Nếu đã cài Docker, dùng `docker compose up --build`. Giữ thư mục `data/` hoặc Docker volume để giữ dữ liệu local.
 
-Trên macOS/Linux, thay Copy-Item bằng cp.
+### Mở demo do máy khác host
 
-### Chạy bằng Docker
+- **Laptop** mở URL web do host gửi. `127.0.0.1` chỉ truy cập được trên chính máy chạy server.
+- **Điện thoại** cài Expo Go và quét QR từ cửa sổ Metro. Ở khác mạng, host chạy `npx expo start --tunnel`. iPhone thật dùng cùng tài khoản Expo với phiên CLI của host. [Hướng dẫn chạy Expo](https://docs.expo.dev/get-started/start-developing/).
+- **Bản cài độc lập** dùng link APK hoặc TestFlight/ad hoc. Người thử mở app Try-oh trực tiếp, không cần chạy Metro. [Hướng dẫn mobile](mobile/README.md).
+
+## Kiểm thử
 
 ~~~bash
-docker compose up --build
-~~~
-
-compose.yaml chạy prototype mock, bind vào máy local và giữ SQLite/ảnh bằng named volume. Chế độ này dùng ALLOW_LOCAL_BACKENDS=true có chủ đích; production dùng Supabase Auth/PostgreSQL và Supabase Storage private (hoặc R2).
-
-## Kiểm thử và build
-
-~~~powershell
 npm test
 npm run build
 npm run smoke
-npm start
+npm --prefix mobile ci
+npm --prefix mobile run check
 ~~~
 
-Smoke test tạo database tạm, dùng ảnh giả và mock provider. Nó kiểm tra server đã build, đăng ký, tải ảnh, tạo outfit, gửi lại cùng mã chỉ trừ một credit, đọc ảnh và xoá tài khoản. Không kết nối database production hoặc gọi AI có phí.
+CI chạy audit, kiểm thử API, PostgreSQL mô phỏng, trình duyệt desktop/mobile, xuất bundle JavaScript cho Android/iOS và kiểm tra container. Smoke test dùng ảnh giả để thử đăng ký, tạo outfit, credit và xóa tài khoản. Bản cài đã ký và thiết bị thật cần được kiểm tra riêng.
 
-CI còn chạy trình duyệt Chromium ở desktop/mobile viewport, kiểm tra lỗi runtime và xuất ảnh chụp trong artifact tryoh-web-api. Ảnh chụp dùng dữ liệu kiểm thử, không phải kết quả AI thật.
+## Database và triển khai
 
-| Job CI | Kiểm tra |
-| --- | --- |
-| web-api | Audit mức high, unit/integration, build, HTTP smoke, browser smoke |
-| mobile | Audit mức high, lint/TypeScript, Expo config, export JS bundle iOS và Android |
-| container | Build Docker image và chạy health check dưới user thường |
-| research-plan | Kiểm tra manifest/profile benchmark mà không tải model/GPU |
+Render chạy web/API. Supabase giữ tài khoản, PostgreSQL và ảnh trong kho private. R2 là lựa chọn thay thế kho ảnh. Điền `DATABASE_URL` và `SUPABASE_SECRET_KEY` trong Render Environment trước khi deploy. Từ thư mục gốc của repo, chạy build và migration bằng kết nối của đúng môi trường:
 
-Test PostgreSQL dùng PGlite với stub Auth của Supabase. Bundle JS không thay thế native build đã ký hay kiểm thử thiết bị thật.
-
-## Mobile
-
-~~~powershell
-cd mobile
-npm ci
-Copy-Item .env.example .env
-npm run check
-npx expo start
-~~~
-
-Điền EXPO_PUBLIC_API_URL, Supabase URL và publishable key của bạn. EXPO_PUBLIC_* nằm trong app nên không được chứa service-role key, AI key hoặc database password.
-
-App dùng scheme tryoh và bundle/package com.hdwc151.tryoh. Project ID và owner của tác giả cũ đã được bỏ khỏi cấu hình tĩnh; tạo EAS project riêng theo [hướng dẫn phát hành](docs/PUBLISHING.md).
-
-Các profile:
-
-- preview: APK Android hoặc iOS internal build.
-- simulator: iOS Simulator trên macOS.
-- production: Android AAB và iOS store build.
-
-Store mode mặc định ẩn thanh toán ngoài. Chưa tích hợp IAP để mua credit. iOS dùng email/password; nút Google được ẩn cho đến khi hoàn tất phương án social login phù hợp.
-
-## AI và khả năng chịu lỗi
-
-Mỗi lượt tạo ảnh có Idempotency-Key theo user. Backend lưu biên nhận SQLite/PostgreSQL trước khi trả kết quả, trả 409 cho request đang chạy hoặc khi dùng lại mã với body khác. Client giữ mã khi mạng rớt để phục hồi kết quả và gộp các lần bấm đồng thời.
-
-OpenRouter có cache tiền xử lý WebP tối đa 16 MB, TTL 5 phút, gộp encode trùng. Đây là cache input đã được kiểm tra quyền; không chia sẻ output AI giữa người dùng.
-
-Semaphore và giới hạn hàng chờ bảo vệ tài nguyên. Biên nhận chống trùng chưa phải hàng đợi có khả năng tiếp tục job sau crash. Không tự retry paid request khi chưa rõ provider đã tính phí hay chưa.
-
-Đọc [AI_OPTIMIZATION.md](docs/AI_OPTIMIZATION.md) cho đối chiếu model, giới hạn giấy phép parser và protocol benchmark. Script experiments/benchmark_fashn.py có profile 20/30/50 bước, warmup, seed, hash weights và đo VRAM; chưa có benchmark GPU thật trong repo.
-
-## Database và deploy
-
-~~~powershell
+~~~bash
 npm run build
 npm run db:status
 npm run db:migrate
 ~~~
 
-Chỉ chạy các lệnh database khi DATABASE_URL trỏ đúng Supabase project cần thao tác. Migration phải chạy trước code mới. File đã áp dụng không được sửa; thêm migration tiếp theo.
+Migration 001–012 được giữ nguyên. Các migration 013–016 thêm phiên thử trực tiếp, trạng thái OAuth dùng một lần, quyền hiển thị hồ sơ và tương thích tên tài khoản cũ. Sau khi deploy, kiểm tra `/api/health` báo sẵn sàng và đúng revision trước khi gửi link cho tester. [Cấu hình Render, Supabase, CI và EAS](docs/PUBLISHING.md).
 
-render.yaml cấu hình backend production. Workflow Deploy backend chỉ chạy khi DEPLOY_ENABLED=true, CI đúng commit đã xanh và các secret đã được cấu hình; migrate trước, deploy đúng SHA rồi xác nhận health/revision.
+## Cấu trúc
 
-[Hướng dẫn từng bước và bảng secret/variable](docs/PUBLISHING.md) bao gồm Render, Supabase, R2, Expo, Apple và Google Play. Không đưa khoá vào Git hoặc gửi qua issue.
-
-## Cấu trúc repo
-
-| Đường dẫn | Nội dung |
+| Đường dẫn | Vai trò |
 | --- | --- |
-| src/ | Web React, state, gọi API, xử lý ảnh |
-| server/ | API, auth, credit, billing, social, storage và AI adapters |
-| server/db/ | Runner migration và kiểm thử rollback/checksum |
-| server/services/ | Giới hạn AI, biên nhận chống trùng, cache tiền xử lý |
-| mobile/ | Expo Router / React Native cho Android và iOS |
-| supabase/migrations/ | 10 migration nguồn và migration biên nhận AI mới |
-| experiments/ | Benchmark nghiên cứu, không nằm trong runtime sản phẩm |
-| benchmarks/ | Manifest mẫu và rubric; ảnh riêng/results được ignore |
-| .github/workflows/ | CI, deploy backend và mobile release |
-| docs/ | Hướng dẫn database, tối ưu, phát hành, tài liệu vận hành nguồn |
-| Dockerfile / compose.yaml | Container production và prototype local |
+| `src/features/`, `src/shared/` | React/TypeScript cho web |
+| `server/` | Express API, auth, tủ đồ, social, credit, ảnh và AI |
+| `mobile/` | Expo SDK 58, React Native và Expo Router |
+| `supabase/migrations/` | PostgreSQL, RLS, index và lịch sử migration |
+| `experiments/`, `benchmarks/` | Thí nghiệm AI và tiêu chí đánh giá |
+| `.github/workflows/`, `docs/` | CI, phát hành và hướng dẫn vận hành |
 
-[UPSTREAM.md](UPSTREAM.md) lưu provenance; [tài liệu nguồn](docs/upstream/README.md) được giữ để tham khảo và có thể chứa tên/cấu hình cũ. README và hướng dẫn Try-oh hiện tại là nguồn chính cho cài đặt.
+Bản đồng bộ VN_VTON bổ sung giữ nền ảnh, thống kê tủ đồ, so sánh trước/sau, thẻ chia sẻ, quét mã kết bạn, bình chọn outfit và quyền hiển thị hồ sơ. Khi mất mạng lúc tạo ảnh, web và mobile tra biên nhận theo mã gốc. Camera trực tiếp cần Decart và bản cài có WebRTC. Để `DECART_API_KEY` trống khi chạy mock.
 
-## English
-
-Try-oh extends VN_VTON into a separate web and Expo prototype. Use Node 24, npm ci, copy .env.example, then npm run dev. Mock AI is enabled by default. The repository includes durable per-user AI retry receipts, bounded reference preprocessing, atomic PostgreSQL migrations, Docker checks, browser smoke tests and mobile/backend release workflows.
-
-Real AI quality, GPU performance, signed mobile binaries and public store availability require verification with your own infrastructure and accounts. See docs/PUBLISHING.md and UPSTREAM.md before distribution.
+Giao diện chủ yếu dùng tiếng Việt. README có bản tiếng Việt và tiếng Anh. Xem [database](docs/DATABASE.md), [tối ưu AI](docs/AI_OPTIMIZATION.md) và [nguồn VN_VTON](UPSTREAM.md).

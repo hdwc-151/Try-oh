@@ -4,8 +4,8 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { AuthStore } from '../auth/auth-store.js'
-import { SqliteUserDataRepository } from '../storage/sqlite-user-data-repository.js'
-import { SqliteGarmentRepository } from '../storage/sqlite-garment-repository.js'
+import { SqliteUserDataRepository } from '../user-data/sqlite-user-data-repository.js'
+import { SqliteGarmentRepository } from '../garments/sqlite-garment-repository.js'
 import { SocialStore } from './social-store.js'
 import Database from 'better-sqlite3'
 describe('Social access and voting',()=>{
@@ -37,7 +37,7 @@ describe('Social access and voting',()=>{
   const person=social.profile('bob','alice').person
   expect(person).not.toHaveProperty('birthDate');expect(person).not.toHaveProperty('inviteCode')
   expect(social.profile('bob','alice').outfits).toHaveLength(0)
-  expect(()=>social.profile('outsider','alice')).toThrow()
+  expect(social.profile('outsider','alice').locked).toBe(true)
  })
  it('applies the profile default visibility only when an outfit has no explicit policy',()=>{
   connect('alice','bob')
@@ -157,6 +157,43 @@ describe('Social access and voting',()=>{
   expect(created.outfits.map(item=>item.frontImageUrl)).toEqual(['/uploads/a.webp','/uploads/b.webp'])
   expect(social.canReadImage('bob','a.webp')).toBe(true)
   expect(social.canReadImage('outsider','a.webp')).toBe(false)
+ })
+ it('lists followers for creators and following for users, and lets creators remove followers',()=>{
+  social.act('alice','follow',{targetId:'creator'})
+  social.act('bob','follow',{targetId:'creator'})
+  expect(social.snapshot('alice').following.map(p=>p.id)).toEqual(['creator'])
+  expect(social.snapshot('creator').followerCount).toBe(2)
+  expect(social.followers('creator',0,30).items.map(p=>p.id).sort()).toEqual(['alice','bob'])
+  expect(social.snapshot('alice').followerCount).toBe(0)
+  social.act('creator','remove-follower',{targetId:'bob'})
+  expect(social.followers('creator',0,30).items.map(p=>p.id)).toEqual(['alice'])
+  expect(social.snapshot('bob').following).toEqual([])
+  expect(()=>social.act('creator','remove-follower',{targetId:'bob'})).toThrow()
+ })
+ it('opens creator profiles publicly while keeping regular profiles friends-only',()=>{
+  social.act('creator','post-create',{imageUrls:['/uploads/look.webp'],caption:'Look mới',visibility:'public',groupIds:[]})
+  social.act('alice','follow',{targetId:'creator'})
+  const view=social.profile('outsider','creator')
+  expect(view.person.creator).toBe(true)
+  expect(view.followerCount).toBe(1)
+  expect(view.following).toBe(false)
+  expect(view.posts.map(post=>post.caption)).toEqual(['Look mới'])
+  expect(social.profile('alice','creator').following).toBe(true)
+  expect(social.profile('outsider','alice').locked).toBe(true)
+  social.act('outsider','block',{targetId:'creator'})
+  expect(()=>social.profile('outsider','creator')).toThrow()
+ })
+ it('gates regular profiles by owner setting and limits outfit polls to 1–24 hours',()=>{
+  expect(social.profile('outsider','alice').locked).toBe(true)
+  social.act('alice','settings',{username:'alice_style',invitePolicy:'known',profileVisibility:'everyone'})
+  expect(social.profile('outsider','alice').locked).toBe(false)
+  connect('alice','bob');connect('alice','carol')
+  const r=social.act('alice','poll-create',{outfitIds:['one','two'],audience:'friends_except',excludedIds:['carol'],hours:6,title:'Ghi chú'})
+  const p=r.polls.find(item=>item.title==='Ghi chú')!
+  expect(p.recipients.map(x=>x.id)).toEqual(['bob'])
+  expect(social.profile('bob','alice').polls.map(x=>x.id)).toEqual([p.id])
+  expect(social.profile('carol','alice').polls).toEqual([])
+  expect(()=>social.act('alice','poll-create',{outfitIds:['one','two'],audience:'friends',hours:72})).toThrow()
  })
  it('removes orphaned social data when an account is deleted',()=>{
   social.act('creator','post-create',{imageUrls:['/uploads/deleted.webp'],caption:'Tài khoản cũ',visibility:'public',groupIds:[]})

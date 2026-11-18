@@ -55,3 +55,26 @@ export const generationIdempotency = (store: GenerationRequestStore): RequestHan
     next(error)
   }
 }
+
+/** Look up the receipt for this account without reserving another generation. */
+export const generationReceipt = (store: GenerationRequestStore): RequestHandler => async (request, response, next) => {
+  response.setHeader('Cache-Control', 'no-store')
+  const key = request.get('Idempotency-Key')
+  if (!key || !/^[a-zA-Z0-9_-]{8,128}$/.test(key)) {
+    response.status(400).json({ code: 'idempotency_key_required', message: 'Mã yêu cầu tạo ảnh không hợp lệ.' })
+    return
+  }
+  try {
+    const receipt = await store.find(request.authUser.id, key)
+    if (!receipt) {
+      response.status(404).json({ code: 'generation_receipt_not_found', message: 'Chưa tìm thấy yêu cầu tạo ảnh.' })
+    } else if (receipt.status === null) {
+      response.setHeader('Retry-After', '3')
+      response.status(202).json({ status: null })
+    } else {
+      response.json({ status: receipt.status, body: receipt.body })
+    }
+  } catch (error) {
+    next(error)
+  }
+}

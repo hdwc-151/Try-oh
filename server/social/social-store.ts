@@ -1,9 +1,10 @@
 import Database from 'better-sqlite3'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { AuthError } from '../auth/auth-service.js'
-import type { SqliteUserDataRepository } from '../storage/sqlite-user-data-repository.js'
-import type { SocialPerson, SocialProfile, SocialPoll, SocialSnapshot, OutfitPolicy, SocialPost, SocialVisibility } from './types.js'
+import type { SqliteUserDataRepository } from '../user-data/sqlite-user-data-repository.js'
+import type { SocialPerson, SocialProfile, SocialProfileView, SocialPoll, SocialSnapshot, OutfitPolicy, SocialPost, SocialVisibility } from './types.js'
 import { prepareSocialSearch, socialSearchScore } from './search.js'
+import { canViewProfile, DEFAULT_PROFILE_VISIBILITY, parsePollHours, parseProfileVisibility, resolvePollAudience } from './poll-audience.js'
 
 type Profile = Omit<SocialProfile, 'name'>
 type RequestRow = { id: string; from: string; to: string; createdAt: number }
@@ -35,6 +36,7 @@ export class SocialStore {
     const state = JSON.parse((this.db.prepare('SELECT data FROM social_state WHERE id = 1').get() as { data: string }).data) as State
     state.posts ??= []
     state.follows ??= []
+    for (const profile of state.profiles ?? []) profile.profileVisibility ??= DEFAULT_PROFILE_VISIBILITY
     const now = Date.now()
     state.temporaryImages = (state.temporaryImages ?? [])
       .map(image => ({ ...image, createdAt: image.createdAt ?? now }))
@@ -47,7 +49,7 @@ export class SocialStore {
   private seed(s: State) {
     const users = this.users()
     this.removeDeletedUsers(s, new Set(users.map(user => user.id)))
-    for (const u of users) if (!s.profiles.some(p => p.id === u.id)) s.profiles.push({ id: u.id, username: `user_${u.id.replace(/-/g, '')}`, avatar: '', birthDate: null, invitePolicy: 'known', inviteCode: randomBytes(24).toString('base64url'), defaultVisibility: 'private' })
+    for (const u of users) if (!s.profiles.some(p => p.id === u.id)) s.profiles.push({ id: u.id, username: `user_${u.id.replace(/-/g, '')}`, avatar: '', birthDate: null, invitePolicy: 'known', inviteCode: randomBytes(24).toString('base64url'), defaultVisibility: 'private', profileVisibility: DEFAULT_PROFILE_VISIBILITY })
     for (const profile of s.profiles) if (profile.defaultVisibility !== 'friends') profile.defaultVisibility = 'private'
   }
   private removeDeletedUsers(s: State, live: Set<string>) {
@@ -89,7 +91,7 @@ export class SocialStore {
     return age < 18
   }
   private notice(s: State, userId: string, actor: string, kind: Notice['kind'], targetId: string) { s.notices.push({ id: randomUUID(), userId, actor, kind, targetId, read: false, createdAt: Date.now() }) }
-  private activeRecipients(s: State, p: Poll) { return p.recipients.filter(id => !this.blocked(s,p.ownerId,id) && (this.friend(s,p.ownerId,id) || Boolean(p.imageOptions?.length && p.visibility === 'public' && s.follows.some(([follower,creator])=>follower===id&&creator===p.ownerId)))) }
+  private activeRecipients(s: State, p: Poll) { return p.recipients.filter(id => !this.blocked(s,p.ownerId,id) && (this.friend(s,p.ownerId,id) || Boolean(p.visibility === 'public' && s.follows.some(([follower,creator])=>follower===id&&creator===p.ownerId)))) }
   private visiblePoll(s: State, p: Poll, user: string) { return (p.ownerId === user || this.activeRecipients(s,p).includes(user)) && (p.imageOptions?.length ? true : p.outfitIds.every(id => this.outfits.listSavedOutfits(p.ownerId).some(o => o.id === id))) }
   private endExpired(s: State) {
     for (const p of s.polls) if (!p.notified && (p.closed || p.expiresAt <= Date.now())) {
@@ -133,7 +135,9 @@ export class SocialStore {
         posts:s.posts.filter(post => !this.person(s,post.ownerId).creator && this.visiblePost(s,post,user)).map(post=>this.socialPost(s,post)).sort((a,b)=>b.createdAt-a.createdAt),
         creatorFeed:s.posts.filter(post => this.person(s,post.ownerId).creator && (post.ownerId===user || s.follows.some(([follower,creator])=>follower===user&&creator===post.ownerId)) && this.visiblePost(s,post,user)).map(post=>this.socialPost(s,post)).sort((a,b)=>b.createdAt-a.createdAt),
         creators:s.profiles.map(profile=>this.person(s,profile.id)).filter(person=>person.creator&&!this.blocked(s,user,person.id)).map(person=>({person,following:s.follows.some(([follower,creator])=>follower===user&&creator===person.id),followerCount:s.follows.filter(([,creator])=>creator===person.id).length})),
-        followingIds:s.follows.filter(([follower])=>follower===user).map(([,creator])=>creator) }
+        followingIds:s.follows.filter(([follower])=>follower===user).map(([,creator])=>creator),
+        followerCount:s.follows.filter(([follower,creator])=>creator===user&&!this.blocked(s,user,follower)).length,
+        following:s.follows.filter(([follower,creator])=>follower===user&&!this.blocked(s,user,creator)&&s.profiles.some(p=>p.id===creator)).map(([,creator])=>this.person(s,creator)) }
     })
   }
   search(user: string, query: string) {
@@ -156,6 +160,7 @@ export class SocialStore {
   resolveInvite(user: string, code: string) { const s = this.load(); const p = s.profiles.find(p => p.inviteCode === code && !this.blocked(s,user,p.id)); return p ? this.person(s,p.id) : fail('Mã mời không còn hiệu lực.',404) }
   private canViewOutfit(s: State, viewer: string, owner: string, outfitId: string) {
     if (viewer === owner) return true
+    if (s.polls.some(p => p.ownerId === owner && !p.imageOptions?.length && p.outfitIds.includes(outfitId) && this.visiblePoll(s,p,viewer))) return true
     if (!this.friend(s,viewer,owner)) return false
     const policy = s.policies.find(p => p.ownerId === owner && p.outfitId === outfitId)
     const visibility = policy?.visibility ?? s.profiles.find(p => p.id === owner)?.defaultVisibility ?? 'private'
@@ -163,10 +168,29 @@ export class SocialStore {
     if (policy?.visibility === 'groups' && s.groups.some(g => policy.groupIds.includes(g.id) && g.members.includes(owner) && g.members.includes(viewer))) return true
     return s.polls.some(p => p.ownerId === owner && p.outfitIds.includes(outfitId) && p.recipients.includes(viewer) && this.visiblePoll(s,p,viewer))
   }
-  profile(user: string, target: string) {
+  profile(user: string, target: string): SocialProfileView {
     const s = this.load()
-    if (user !== target && !this.friend(s,user,target)) return fail('Hồ sơ không khả dụng.',404)
-    return { person:this.person(s,target), outfits:this.outfits.listSavedOutfits(target).filter(o => this.canViewOutfit(s,user,target,o.id)).map(o => ({ id:o.id,frontImageUrl:o.frontImageUrl,backImageUrl:o.backImageUrl,official:s.policies.some(p => p.outfitId === o.id && p.official) })) }
+    const profile = s.profiles.find(p => p.id === target)
+    if (!profile) return fail('Hồ sơ không khả dụng.',404)
+    const person = this.person(s,target)
+    const friend = this.friend(s,user,target)
+    const blocked = user !== target && this.blocked(s,user,target)
+    if (blocked) return fail('Hồ sơ không khả dụng.',404)
+    const header = { person, friend,
+      followerCount:s.follows.filter(([,creator])=>creator===target).length,
+      followingCount:s.follows.filter(([follower])=>follower===target).length,
+      following:s.follows.some(([follower,creator])=>follower===user&&creator===target) }
+    if (!canViewProfile({ viewer:user, target, blocked, creator:Boolean(person.creator), friend, visibility:profile.profileVisibility })) return { ...header, followingCount:0, posts:[], outfits:[], polls:[], locked:true }
+    return { ...header, locked:false,
+      posts:s.posts.filter(post=>post.ownerId===target&&this.visiblePost(s,post,user)).map(post=>this.socialPost(s,post)).sort((a,b)=>b.createdAt-a.createdAt),
+      outfits:this.outfits.listSavedOutfits(target).filter(o => this.canViewOutfit(s,user,target,o.id)).map(o => ({ id:o.id,frontImageUrl:o.frontImageUrl,backImageUrl:o.backImageUrl,official:s.policies.some(p => p.outfitId === o.id && p.official) })),
+      polls:s.polls.filter(p=>p.ownerId===target&&this.visiblePoll(s,p,user)).map(p=>this.poll(s,p,user)).sort((a,b)=>b.createdAt-a.createdAt) }
+  }
+  followers(user: string, offset: number, limit: number) {
+    const s = this.load()
+    const all = s.follows.filter(([follower,creator])=>creator===user&&!this.blocked(s,user,follower)&&s.profiles.some(p=>p.id===follower)).map(([follower])=>follower).reverse()
+    const items = all.slice(offset, offset + limit).map(id => this.person(s,id))
+    return { items, total: all.length, nextOffset: offset + items.length < all.length ? offset + items.length : null }
   }
   trackTemporaryImage(user: string, key: string) { this.change(s => { s.temporaryImages=s.temporaryImages.filter(item=>item.key!==key);s.temporaryImages.push({ownerId:user,key,createdAt:Date.now()}) }) }
   private userImageKeys(s: State, user: string): string[] {
@@ -239,6 +263,7 @@ export class SocialStore {
           if (body.defaultVisibility !== 'private' && body.defaultVisibility !== 'friends') fail('Quyền xem mặc định không hợp lệ.')
           me.defaultVisibility = body.defaultVisibility as SocialProfile['defaultVisibility']
         }
+        if (body.profileVisibility !== undefined) me.profileVisibility = parseProfileVisibility(body.profileVisibility)
         if(this.restricted(me)&&me.invitePolicy==='everyone') me.invitePolicy='known'
       } else if(action==='rotate-invite') { me.inviteCode=randomBytes(24).toString('base64url')
       } else if(action==='request') {
@@ -290,17 +315,22 @@ export class SocialStore {
         const creator=this.person(s,target);if(target===user||!creator.creator||this.blocked(s,user,target))fail('Nhà sáng tạo không hợp lệ.',404)
         if(action==='follow'&&!s.follows.some(([follower,id])=>follower===user&&id===target))s.follows.push([user,target])
         if(action==='unfollow')s.follows=s.follows.filter(([follower,id])=>!(follower===user&&id===target))
+      } else if(action==='remove-follower') {
+        // KOL/KOC gỡ một người khỏi danh sách theo dõi mình (người đó vẫn có thể theo dõi lại).
+        if(!s.follows.some(([follower,id])=>follower===target&&id===user))fail('Người này không theo dõi bạn.',404)
+        s.follows=s.follows.filter(([follower,id])=>!(follower===target&&id===user))
       } else if(action==='image-poll-create') {
         const imageUrls=ids(body.imageUrls,3);if(imageUrls.length<2||imageUrls.some(url=>!url.startsWith('/uploads/')))fail('Chọn 2–3 ảnh để tạo bình chọn.')
-        const hours=Number(body.hours);if(![1,24,72].includes(hours))fail('Thời hạn không hợp lệ.')
+        const hours=parsePollHours(body.hours)
         const visibility=body.visibility;if(visibility!=='friends'&&visibility!=='groups'&&visibility!=='public')fail('Quyền xem bình chọn không hợp lệ.');const groupIds=ids(body.groupIds??[]);if(visibility==='groups'&&(!groupIds.length||groupIds.some(id=>!s.groups.some(group=>group.id===id&&group.members.includes(user)))))fail('Hãy chọn nhóm hợp lệ.')
         const supplied=ids(body.recipientIds??[]);if(visibility==='friends'&&supplied.some(id=>!this.friend(s,user,id)))fail('Người nhận phải là bạn bè hiện tại.');const groupMembers=s.groups.filter(group=>groupIds.includes(group.id)&&group.members.includes(user)).flatMap(group=>group.members).filter(id=>id!==user);const publicFollowers=s.follows.filter(([,creator])=>creator===user).map(([follower])=>follower);const recipients=[...new Set(visibility==='public'?[...this.friends(s,user),...publicFollowers]:visibility==='groups'?groupMembers:supplied.length?supplied:this.friends(s,user))];if(!recipients.length)fail('Bình chọn cần ít nhất một người nhận được.')
         const options=imageUrls.map(imageUrl=>({id:randomUUID(),imageUrl}));const p:Poll={id:randomUUID(),ownerId:user,title:str(body.title,120)||'Mình nên chọn bộ nào?',outfitIds:options.map(option=>option.id),imageOptions:options,visibility:visibility as SocialVisibility,groupIds,recipients,votes:{},createdAt:Date.now(),expiresAt:Date.now()+hours*3600000,closed:false,winnerId:null,notified:false};s.polls.push(p);for(const id of recipients)this.notice(s,id,user,'poll',p.id)
       } else if(action==='poll-create') {
-        const outfitIds=ids(body.outfitIds,3);if(!outfitIds.length||outfitIds.some(id=>!this.outfits.listSavedOutfits(user).some(o=>o.id===id)))fail('Chọn 1–3 outfit của bạn.')
-        const recipients=ids(body.recipientIds);if(!recipients.length||recipients.some(id=>!this.friend(s,user,id)))fail('Người nhận phải là bạn bè hiện tại.')
-        const hours=Number(body.hours);if(![1,24,72].includes(hours))fail('Thời hạn không hợp lệ.')
-        const p:Poll={id:randomUUID(),ownerId:user,title:str(body.title,120)||'Mình nên chọn bộ nào?',outfitIds,recipients,votes:{},createdAt:Date.now(),expiresAt:Date.now()+hours*3600000,closed:false,winnerId:null,notified:false};s.polls.push(p)
+        const outfitIds=ids(body.outfitIds,3);if(outfitIds.length<2||outfitIds.some(id=>!this.outfits.listSavedOutfits(user).some(o=>o.id===id)))fail('Chọn 2–3 outfit của bạn.')
+        const hours=parsePollHours(body.hours)
+        const followers=s.follows.filter(([follower,creator])=>creator===user&&!this.blocked(s,user,follower)).map(([follower])=>follower)
+        const {recipients,visibility}=resolvePollAudience(body,{friends:this.friends(s,user),followers,ids:value=>ids(value)})
+        const p:Poll={id:randomUUID(),ownerId:user,title:str(body.title??'',120)||'Mình nên chọn bộ nào?',outfitIds,visibility,groupIds:[],recipients,votes:{},createdAt:Date.now(),expiresAt:Date.now()+hours*3600000,closed:false,winnerId:null,notified:false};s.polls.push(p)
         for(const id of recipients)this.notice(s,id,user,'poll',p.id)
       } else if(['vote','poll-close','poll-delete','poll-winner'].includes(action)) {
         const p=s.polls.find(p=>p.id===body.id&&this.visiblePoll(s,p,user));if(!p)fail('Bình chọn không khả dụng.',404)
@@ -316,7 +346,7 @@ export class SocialStore {
           if(action==='poll-close')p!.closed=true
           if(action==='poll-winner') {
             if(!p!.closed&&p!.expiresAt>Date.now())fail('Đóng bình chọn trước khi lưu outfit thắng.')
-            const counts=p!.outfitIds.map(id=>({id,count:Object.entries(p!.votes).filter(([u,o])=>o===id&&this.friend(s,user,u)).length}))
+            const voters=this.activeRecipients(s,p!);const counts=p!.outfitIds.map(id=>({id,count:Object.entries(p!.votes).filter(([u,o])=>o===id&&voters.includes(u)).length}))
             const max=Math.max(...counts.map(c=>c.count));const id=str(body.outfitId)
             if(max===0||!counts.some(c=>c.id===id&&c.count===max))fail('Hãy chọn một outfit có nhiều phiếu nhất.')
             p!.winnerId=id;if(!p!.imageOptions?.length){const old=s.policies.find(x=>x.outfitId===id);if(old)old.official=true;else s.policies.push({ownerId:user,outfitId:id,visibility:'private',groupIds:[],official:true})}

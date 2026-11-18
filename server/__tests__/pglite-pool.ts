@@ -18,6 +18,8 @@ const SUPABASE_STUBS = `
     id uuid primary key,
     email text,
     raw_user_meta_data jsonb not null default '{}'::jsonb,
+    -- Supabase marks social accounts here; migration 013 reads it for display names.
+    raw_app_meta_data jsonb not null default '{}'::jsonb,
     created_at timestamptz not null default now()
   );
   create or replace function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;

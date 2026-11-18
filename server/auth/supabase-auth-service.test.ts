@@ -30,7 +30,7 @@ const accessToken = (name: string) => [
 
 type Call = { method: string; path: string; authorization: string | null; body: unknown }
 
-const createService = () => {
+const createService = (options: { serviceRole?: boolean } = {}) => {
   const calls: Call[] = []
   const fakeFetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(String(input))
@@ -56,7 +56,13 @@ const createService = () => {
     }
     return json(404, { message: 'not found' })
   }) as typeof fetch
-  const service = new SupabaseAuthService('https://project.supabase.co', 'sb_publishable_test', 'https://app.example.com', undefined, fakeFetch)
+  const service = new SupabaseAuthService(
+    'https://project.supabase.co',
+    'sb_publishable_test',
+    'https://app.example.com',
+    options.serviceRole ? 'sb_secret_service_role' : undefined,
+    fakeFetch,
+  )
   return { service, calls }
 }
 

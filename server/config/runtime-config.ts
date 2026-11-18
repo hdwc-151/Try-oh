@@ -27,6 +27,14 @@ export const runtimeConfig = {
   aiRequestWindowMs: 15 * 60 * 1000,
   // Total AI requests (extract + generation) allowed per rolling day across all users; unset disables.
   aiDailyRequestLimit: optionalPositiveInteger(process.env.AI_DAILY_REQUEST_LIMIT),
+  // Live camera try-on (Decart). Unset DECART_API_KEY hides the feature everywhere.
+  decartApiKey: process.env.DECART_API_KEY?.trim() || undefined,
+  decartModel: process.env.DECART_MODEL?.trim() || 'lucy-vton-latest',
+  livePreviewWindowDays: positiveInteger(process.env.LIVE_PREVIEW_WINDOW_DAYS, 30),
+  // Quota sessions one fast-tier session uses; Decart charges fast at twice the price.
+  livePreviewFastCost: Math.min(10, positiveInteger(process.env.LIVE_PREVIEW_FAST_COST, 1)),
+  // Sessions all users together may start per day (cost circuit breaker); unset disables.
+  livePreviewDailyLimit: optionalPositiveInteger(process.env.LIVE_PREVIEW_DAILY_LIMIT),
   apiRequestsPerMinute: positiveInteger(process.env.API_REQUESTS_PER_MINUTE, 600),
   apiBurst: positiveInteger(process.env.API_RATE_LIMIT_BURST, 120),
   // Shared ceiling per IP across all sessions; defaults to 4x the per-session limit.
@@ -47,6 +55,8 @@ export const runtimeConfig = {
   // Deep links the mobile app may be sent back to after a Google sign-in. Anything
   // not listed here is refused, so a crafted link cannot carry a session elsewhere.
   mobileAuthRedirects: (process.env.MOBILE_AUTH_REDIRECT_URLS ?? 'tryoh://auth-callback')
-    .split(',').map(value => value.trim()).filter(Boolean),
+    .split(',').map(value => value.trim())
+    // A `*` entry is a development convenience (Expo Go), never something to run in production.
+    .filter(value => Boolean(value) && !(value.includes('*') && process.env.NODE_ENV === 'production')),
   adminEmails: (process.env.ADMIN_EMAILS ?? '').split(',').map(value => value.trim().toLowerCase()).filter(Boolean),
 }

@@ -1,8 +1,8 @@
 import multer from 'multer'
 import sharp from 'sharp'
 
-export const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
-export const MAX_IMAGE_SIZE = 10 * 1024 * 1024
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024
 const MAX_IMAGE_PIXELS = 24_000_000
 
 export const createImageUpload = (files: number) => multer({

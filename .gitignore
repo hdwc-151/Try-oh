@@ -85,3 +85,5 @@ benchmarks/results/
 __pycache__/
 .pytest_cache/
 .venv/
+local.properties
+Claude outputs/

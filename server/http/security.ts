@@ -28,11 +28,21 @@ const trustedImageOrigins = (): string[] => {
   return [...origins]
 }
 
+// Live camera try-on streams video over WebRTC to Decart. Its media servers are
+// announced at connect time, so their hosts are matched by wildcard. Overridable
+// with LIVE_PREVIEW_CONNECT_ORIGINS (space separated) if Decart moves them.
+const DEFAULT_LIVE_PREVIEW_ORIGINS = 'https://api.decart.ai wss://api.decart.ai https://*.decart.ai wss://*.decart.ai https://*.livekit.cloud wss://*.livekit.cloud'
+const livePreviewEnabled = () => Boolean(process.env.DECART_API_KEY?.trim())
+const livePreviewOrigins = () => (process.env.LIVE_PREVIEW_CONNECT_ORIGINS?.trim() || DEFAULT_LIVE_PREVIEW_ORIGINS)
+  .split(/\s+/).filter(origin => /^(https|wss):\/\/[a-z0-9*.-]+(:\d+)?$/i.test(origin)).join(' ')
+
 export const setSecurityHeaders = (_request: Request, response: Response, next: NextFunction) => {
   response.setHeader('X-Content-Type-Options', 'nosniff')
   response.setHeader('X-Frame-Options', 'DENY')
   response.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
-  response.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+  const livePreview = livePreviewEnabled()
+  // The camera is only ever needed by the live try-on, and only on this origin.
+  response.setHeader('Permissions-Policy', `camera=(${livePreview ? 'self' : ''}), microphone=(), geolocation=()`)
   response.setHeader('Cross-Origin-Opener-Policy', 'same-origin')
   // Render terminates TLS in front of the app; tell browsers to never downgrade.
   if (process.env.NODE_ENV === 'production') {
@@ -45,7 +55,7 @@ export const setSecurityHeaders = (_request: Request, response: Response, next: 
     const imageOrigins = trustedImageOrigins().join(' ')
     response.setHeader(
       'Content-Security-Policy',
-      `default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; img-src 'self' data: blob:${imageOrigins ? ` ${imageOrigins}` : ''}; media-src 'self' blob:; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; connect-src 'self' https://staticimgly.com; worker-src 'self' blob:; form-action 'self'`,
+      `default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; img-src 'self' data: blob:${imageOrigins ? ` ${imageOrigins}` : ''}; media-src 'self' blob:; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; connect-src 'self' https://staticimgly.com${livePreview ? ` ${livePreviewOrigins()}` : ''}; worker-src 'self' blob:; form-action 'self'`,
     )
   }
   next()
