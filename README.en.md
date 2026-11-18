@@ -6,6 +6,8 @@ Upload a person photo and garment photos, generate front and back views, save ou
 
 ## Try the demo
 
+Choose **Vào demo** on the browser demo to open a temporary session. Use sample photos. See the [browser demo setup](docs/PUBLISHING.md#bản-demo-web).
+
 | Goal | What the tester installs | What the host runs |
 | --- | --- | --- |
 | Open a web demo | A browser | A reachable web/API URL |

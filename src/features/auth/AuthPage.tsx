@@ -175,6 +175,24 @@ export function AuthPage({ onAuthenticated }: AuthPageProps) {
     }
   }
 
+  const startDemo = async () => {
+    if (isSubmitting) return
+    setIsSubmitting(true)
+    setError(null)
+    try {
+      const user = await authApi.register({
+        displayName: 'Khách dùng thử',
+        email: `tryoh-${crypto.randomUUID()}@example.invalid`,
+        password: crypto.randomUUID(),
+      })
+      onAuthenticated(user, 'user')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Chưa mở được phòng thử.')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
   const resendConfirmation = async () => {
     if (!email.trim()) return
     setIsResendingConfirmation(true)
@@ -187,6 +205,21 @@ export function AuthPage({ onAuthenticated }: AuthPageProps) {
     } finally {
       setIsResendingConfirmation(false)
     }
+  }
+
+  if (import.meta.env.VITE_TRYOH_DEMO === 'true') {
+    return (
+      <main className="grid min-h-[70dvh] place-items-center px-5 py-10">
+        <section className="w-full max-w-md rounded-3xl border border-black/10 bg-white p-7 text-center shadow-sm">
+          <h1 className="font-display text-3xl font-bold text-ink">Phòng thử Try-oh</h1>
+          <p className="mt-3 text-sm leading-6 text-ink/70">Thử thao tác với ảnh mẫu. Dữ liệu của phòng thử được lưu tạm.</p>
+          <button type="button" onClick={() => void startDemo()} disabled={isSubmitting} className="mt-6 w-full rounded-2xl bg-sage-700 px-5 py-3 text-sm font-bold text-white hover:bg-sage-800 disabled:opacity-50">
+            {isSubmitting ? 'Đang mở phòng thử…' : 'Vào demo'}
+          </button>
+          {error && <p className="mt-4 text-sm text-red-700" role="alert">{error}</p>}
+        </section>
+      </main>
+    )
   }
 
   const content = contentByMode[mode]

@@ -24,6 +24,11 @@ window.addEventListener('vite:preloadError', (event) => {
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <AppErrorBoundary>
+      {import.meta.env.VITE_TRYOH_DEMO === 'true' && (
+        <aside className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-center text-sm text-amber-950">
+          Bản demo Try-oh. Ảnh kết quả được mô phỏng. Dùng ảnh mẫu và thông tin thử nghiệm.
+        </aside>
+      )}
       <App />
     </AppErrorBoundary>
   </StrictMode>,

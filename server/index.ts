@@ -69,6 +69,17 @@ const authBackend = process.env.AUTH_BACKEND ?? 'local'
 const supabaseServerKey = process.env.SUPABASE_SECRET_KEY?.trim() || process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
 const appBaseUrl = runtimeConfig.appBaseUrl
 
+if (process.env.VITE_TRYOH_DEMO === 'true' && (
+  process.env.ALLOW_LOCAL_BACKENDS !== 'true'
+  || persistenceBackend !== 'sqlite'
+  || authBackend !== 'local'
+  || imageStorageBackend !== 'local'
+  || process.env.IMAGE_PROVIDER !== 'mock'
+  || process.env.DECART_API_KEY?.trim()
+)) {
+  throw new Error('The browser demo requires isolated local storage, local accounts and the mock image provider.')
+}
+
 // Local-only backends lose data on every deploy and cannot be shared between
 // instances. Refuse to start a production process on them by mistake.
 if (process.env.NODE_ENV === 'production' && !isDevelopment && process.env.ALLOW_LOCAL_BACKENDS !== 'true') {

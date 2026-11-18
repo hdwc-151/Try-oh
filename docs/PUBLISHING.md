@@ -145,3 +145,18 @@ Các mục trên là điều kiện thực tế của release này, không phả
 - [Apple: xoá tài khoản](https://developer.apple.com/help/app-review/guideline-reference/5-1-1-account-deletion/).
 - [Google Play: payments](https://support.google.com/googleplay/android-developer/answer/9858738).
 - [IMG.LY: license](https://github.com/imgly/background-removal-js#license).
+
+## Bản demo web
+
+Triển khai một dịch vụ Render riêng từ cùng nhánh `main`. Bản demo dùng ảnh mô phỏng và tài khoản riêng cho mỗi lần vào phòng thử. Render có thể đặt lại dữ liệu thử nghiệm khi khởi động lại dịch vụ.
+
+| Biến | Giá trị |
+| --- | --- |
+| `VITE_TRYOH_DEMO` | `true` |
+| `ALLOW_LOCAL_BACKENDS` | `true` |
+| `PERSISTENCE_BACKEND` | `sqlite` |
+| `AUTH_BACKEND` | `local` |
+| `IMAGE_STORAGE` | `local` |
+| `IMAGE_PROVIDER` | `mock` |
+
+Đặt `COOKIE_SECURE=true`, `TRUST_PROXY_HOPS=1` và `APP_BASE_URL` bằng URL HTTPS của bản demo. Dùng cùng lệnh build và start trong `render.yaml`. Giữ khóa dịch vụ AI và thanh toán trong môi trường của bản chính. Khi gửi link demo, đề nghị người thử dùng ảnh mẫu và thông tin thử nghiệm.
