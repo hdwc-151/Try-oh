@@ -1,24 +1,49 @@
-import { beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { apiFetch } from './api-client'
 import { tryOnApi } from './try-on-api'
 
 vi.mock('./api-client', () => ({ apiFetch: vi.fn() }))
-beforeEach(() => { vi.mocked(apiFetch).mockReset(); tryOnApi.clearCache() })
+const mock = vi.mocked(apiFetch)
+const requestedKey = (index: number) => new Headers(mock.mock.calls[index]?.[1]?.headers).get('Idempotency-Key')
 
-it('reuses a receipt after a dropped response and coalesces duplicate clicks', async () => {
-  const mock = vi.mocked(apiFetch)
+beforeEach(() => {
+  vi.useFakeTimers()
+  mock.mockReset()
+  tryOnApi.clearCache()
+})
+afterEach(() => vi.useRealTimers())
+
+it('reuses the request key after a timeout and recovers the exact receipt after a dropped response', async () => {
   mock.mockRejectedValueOnce(new TypeError('connection lost'))
-  await expect(tryOnApi.generateAngle('front', ['garment'], true, true)).rejects.toThrow('connection lost')
-  const originalKey = (mock.mock.calls[0]![1]!.headers as Record<string, string>)['Idempotency-Key']
-  let finish!: (response: Response) => void
-  mock.mockImplementationOnce(() => new Promise<Response>(done => { finish = done }))
+  mock.mockResolvedValue(new Response(null, { status: 202 }))
+
+  const unconfirmed = expect(tryOnApi.generateAngle('front', ['garment'], true, true))
+    .rejects.toThrow('Chưa xác nhận được kết quả')
+  await vi.runAllTimersAsync()
+  await unconfirmed
+  const originalKey = requestedKey(0)
+  expect(originalKey).toBeTruthy()
+  expect(mock.mock.calls.slice(1).map(([path]) => path))
+    .toEqual(Array(4).fill('/api/generations/receipt'))
+  expect(requestedKey(4)).toBe(originalKey)
+
+  const recovered = { angle: 'front', imageUrl: '/uploads/one.webp', createdAt: 'now', credits: { remaining: 9 } }
+  mock.mockClear()
+  mock.mockRejectedValueOnce(new TypeError('connection lost'))
+  mock.mockResolvedValueOnce(new Response(JSON.stringify({ status: 200, body: recovered })))
+
   const first = tryOnApi.generateAngle('front', ['garment'], true, true)
   const second = tryOnApi.generateAngle('front', ['garment'], true, true)
+  expect(mock).toHaveBeenCalledTimes(1)
+  expect(requestedKey(0)).toBe(originalKey)
+
+  await vi.advanceTimersByTimeAsync(2_000)
+  expect(await Promise.all([first, second])).toEqual([recovered, recovered])
   expect(mock).toHaveBeenCalledTimes(2)
-  expect((mock.mock.calls[1]![1]!.headers as Record<string, string>)['Idempotency-Key']).toBe(originalKey)
-  finish(new Response(JSON.stringify({ angle: 'front', imageUrl: '/uploads/one.webp', createdAt: 'now', credits: { remaining: 9 } }), { status: 200 }))
-  expect(await first).toEqual(await second)
+  expect(mock.mock.calls[1]?.[0]).toBe('/api/generations/receipt')
+  expect(requestedKey(1)).toBe(originalKey)
+
   mock.mockResolvedValueOnce(new Response(JSON.stringify({ angle: 'front', imageUrl: '/uploads/two.webp' })))
   await tryOnApi.generateAngle('front', ['garment'], true, true)
-  expect((mock.mock.calls[2]![1]!.headers as Record<string, string>)['Idempotency-Key']).not.toBe(originalKey)
+  expect(requestedKey(2)).not.toBe(originalKey)
 })
