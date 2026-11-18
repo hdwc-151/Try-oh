@@ -1,0 +1,52 @@
+name: Prepare Try-oh upstream integration
+on:
+  push:
+    branches: [prepare/vn-vton-nov18]
+permissions:
+  contents: write
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Merge the reviewed source snapshots
+        env:
+          SOURCE_BASE: 768ea6ecd01e88146b0645d9ebd056d878d4a9f4
+          SOURCE_TIP: e5bea3a1ed31f1ef58d0b8d071e3b17c884f131e
+          TARGET_BASE: f985c50a0f9f3abbf6a38ef7aeb73513c41a4c8b
+        run: |
+          set -euo pipefail
+          cp -R scripts/upstream-integration "$RUNNER_TEMP/integration"
+          git config user.name "Try-oh Integration"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch --no-tags --depth=1 origin "$TARGET_BASE"
+          git fetch --no-tags --depth=1 https://github.com/NHNam1306/VN_VTON.git "$SOURCE_BASE" "$SOURCE_TIP"
+          base="$(git commit-tree "$SOURCE_BASE^{tree}" -m 'Original VN_VTON snapshot')"
+          ours="$(git commit-tree "$TARGET_BASE^{tree}" -p "$base" -m 'Current Try-oh snapshot')"
+          theirs="$(git commit-tree "$SOURCE_TIP^{tree}" -p "$base" -m 'Updated VN_VTON snapshot')"
+          git branch upstream-snapshot "$theirs"
+          git switch --detach "$ours"
+          if ! git merge --no-ff --no-commit upstream-snapshot; then
+            test -n "$(git diff --name-only --diff-filter=U)"
+          fi
+          python3 "$RUNNER_TEMP/integration/resolve.py"
+          git add -A
+          git diff --cached --check
+          test -z "$(git diff --name-only --diff-filter=U)"
+          test "$(git diff --cached --name-only -- supabase/migrations/ | wc -l)" -eq 4
+          tree="$(git write-tree)"
+          commit="$(git commit-tree "$tree" -p "$TARGET_BASE" -m 'Integrate VN_VTON updates and document Try-oh in Vietnamese and English')"
+          printf '%s\n' "$commit" > "$RUNNER_TEMP/integration-commit"
+          printf 'Candidate commit %s with tree %s\n' "$commit" "$tree"
+      - name: Push the integration branch for CI
+        env:
+          TRYOH_PUSH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          commit="$(cat "$RUNNER_TEMP/integration-commit")"
+          header="$(printf 'x-access-token:%s' "$TRYOH_PUSH_TOKEN" | base64 -w0)"
+          printf '::add-mask::%s\n' "$header"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $header" push origin "$commit:refs/heads/integrate/vn-vton-nov18"
