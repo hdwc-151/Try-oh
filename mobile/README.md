@@ -46,7 +46,7 @@ npx eas-cli@27.7.2 build --platform ios --profile preview
 | `production` | AAB cho Google Play | Bản ký cho TestFlight/App Store Connect |
 | `simulator` | — | iOS Simulator trên macOS |
 
-Bản cài đã chứa bundle. Camera trực tiếp cần bản native có WebRTC và backend bật Decart. Khi mở tính năng, camera gửi video và ảnh tham chiếu sang Decart, với audio tắt. Bản store ẩn thanh toán ngoài. [Thiết lập ký và phát hành](../docs/PUBLISHING.md).
+Bản cài đã chứa bundle. Camera trực tiếp cần bản native có WebRTC và backend bật Decart. Căn khung camera hiển thị video trên thiết bị. Khi xác nhận bắt đầu, camera gửi video và ảnh tham chiếu sang Decart, với audio tắt. Bản store ẩn thanh toán ngoài. [Thiết lập ký và phát hành](../docs/PUBLISHING.md).
 
 ## English
 
@@ -54,4 +54,4 @@ To join a hosted demo, install **Expo Go on the phone** and scan the host's Metr
 
 To host, run `npm ci` in `mobile/`, copy `.env.example` to `.env`, and set the reachable API URL, Supabase URL and matching public key. Run `npm run check` and `npx expo start --tunnel`. The API connection is independent of the Metro tunnel.
 
-The EAS preview profile produces an Android APK or a signed iOS build for registered devices. TestFlight uses a signed production build. Live camera try-on requires WebRTC in the native app and Decart on the backend. [English project README](../README.en.md#android-and-ios) · [Expo internal distribution](https://docs.expo.dev/build/internal-distribution/).
+The EAS preview profile produces an Android APK or a signed iOS build for registered devices. TestFlight uses a signed production build. Live camera try-on requires WebRTC in the native app and Decart on the backend. [English project README](../README.en.md#android-and-ios) · [Expo internal distribution](https://docs.expo.dev/build/internal-distribution/). Framing runs on the device. Confirming starts the video session and uses the displayed allowance.

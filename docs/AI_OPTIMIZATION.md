@@ -77,3 +77,16 @@ Chi phí GPU trên một output thành công phải cộng cả thời gian idle
 5. [SegFormer license, mục 3.3](https://github.com/NVlabs/SegFormer/blob/master/LICENSE).
 6. [Diffusers: compile, quantization và offload](https://huggingface.co/docs/diffusers/en/optimization/speed-memory-optims).
 7. [Diffusers: giảm bộ nhớ](https://huggingface.co/docs/diffusers/main/optimization/memory).
+
+## Kiểm tra khung hình và chất lượng đầu vào
+
+Web và app native có bước căn khung camera trên thiết bị trước khi người dùng xác nhận bắt đầu phiên Decart. Hủy bước này sẽ dừng camera. Web đọc mẫu pixel ở vùng giữa video để gợi ý khi khung gần như tối hẳn hoặc cháy sáng. Cảnh báo chỉ hướng dẫn người dùng, không chặn kiểu ánh sáng hay màu da cụ thể. Native hiện có khung và hướng dẫn bằng chữ.
+
+Tham khảo quy trình chọn ảnh món đồ, căn camera và bắt đầu video từ [Anywear của Decart](https://anywear.decart.ai/live-virtual-try-on). Tính năng căn khung của Try-oh không đòi hỏi gửi khung hình lên server. Thử video cần quyền camera, tài khoản đủ lượt, backend bật Decart và WebRTC trên bản cài mobile.
+
+| Bước nghiên cứu | Cách thực hiện và cách đo |
+| --- | --- |
+| Kiểm tra tư thế | Thử [MediaPipe Pose Landmarker](https://developers.google.com/edge/mediapipe/solutions/vision/pose_landmarker) trên thiết bị để gợi ý hướng máy, số người và độ phủ vai/thân theo loại đồ. Đo tỷ lệ cảnh báo sai trên nhiều thiết bị, ánh sáng và dáng người. |
+| Tách vùng trang phục | So sánh ảnh thường với mask người và món đồ từ [Image Segmenter](https://developers.google.com/edge/mediapipe/solutions/vision/image_segmenter) hoặc parser đã kiểm tra giấy phép. Mẫu giữ lại mặt, tay che khuất, logo và màu gốc khi chấm mù. |
+| Tìm đồ trong tủ | Đo tìm kiếm theo loại, màu và tên tiếng Việt trước. Thêm embedding ảnh cho truy vấn tương tự khi có tập đánh giá và cải thiện Recall@5 trên cùng bộ SKU. |
+| Mở rộng video | Đo p95 đến khung kết quả đầu, tỷ lệ lỗi phiên, chi phí thực tế và mức dùng pin trước khi mở rộng trên native. Luồng tạo ảnh vẫn là lựa chọn khi webcam hoặc mạng không ổn định. |

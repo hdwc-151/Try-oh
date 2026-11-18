@@ -7,6 +7,7 @@ import { useFittingRoomStore } from '../../store/useFittingRoomStore'
 import { garmentCategoryLabels, type GarmentCategory } from '../../types/fitting-room'
 import type { LivePreviewSpeed, LivePreviewStatus } from '../../types/live-preview'
 import { thumbnailUrl } from '../../services/image-url'
+import { checkCameraExposure, type CameraExposure } from './camera-exposure'
 
 const categories = Object.keys(garmentCategoryLabels) as GarmentCategory[]
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp']
@@ -14,7 +15,7 @@ const MAX_UPLOAD_BYTES = 8 * 1024 * 1024
 /** Give up if the stream never starts: the session is charged, but nobody is left waiting. */
 const CONNECT_TIMEOUT_MS = 45_000
 
-type Phase = 'idle' | 'starting' | 'connecting' | 'live' | 'ended'
+type Phase = 'idle' | 'starting' | 'framing' | 'connecting' | 'live' | 'ended'
 const SPEED_STORAGE_KEY = 'fitsy.livePreview.speed'
 
 // The chosen tier is only a per-browser convenience; the server checks the plan.
@@ -56,14 +57,26 @@ export function LivePreviewModal({ open, onClose, onOpenPlans, onUsed }: LivePre
   const [phase, setPhase] = useState<Phase>('idle')
   const [error, setError] = useState<string | null>(null)
   const [secondsLeft, setSecondsLeft] = useState(0)
+  const [exposure, setExposure] = useState<CameraExposure>('balanced')
   const inputRef = useRef<HTMLInputElement>(null)
   const localVideoRef = useRef<HTMLVideoElement>(null)
   const remoteVideoRef = useRef<HTMLVideoElement>(null)
   const clientRef = useRef<RealTimeClient | null>(null)
   const cameraRef = useRef<MediaStream | null>(null)
   const timersRef = useRef<number[]>([])
+  const attemptRef = useRef(0)
+  const confirmFrameRef = useRef<((confirmed: boolean) => void) | null>(null)
+
+  const confirmFrame = () => {
+    const confirm = confirmFrameRef.current
+    confirmFrameRef.current = null
+    confirm?.(true)
+  }
 
   const stop = useCallback((nextPhase: Phase = 'ended') => {
+    attemptRef.current += 1
+    confirmFrameRef.current?.(false)
+    confirmFrameRef.current = null
     timersRef.current.forEach((timer) => window.clearTimeout(timer))
     timersRef.current = []
     try { clientRef.current?.disconnect() } catch { /* already closed */ }
@@ -72,7 +85,7 @@ export function LivePreviewModal({ open, onClose, onOpenPlans, onUsed }: LivePre
     cameraRef.current = null
     if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null
     if (localVideoRef.current) localVideoRef.current.srcObject = null
-    setPhase((current) => (current === 'idle' ? current : nextPhase))
+    setPhase((current) => current === 'idle' || current === 'starting' || current === 'framing' ? 'idle' : nextPhase)
   }, [])
 
   const close = useCallback(() => {
@@ -105,7 +118,9 @@ export function LivePreviewModal({ open, onClose, onOpenPlans, onUsed }: LivePre
   }, [upload])
 
   // Never leave the camera or a paid stream running behind a closed dialog.
-  useEffect(() => () => stop('idle'), [stop])
+  useEffect(() => {
+    if (open) return () => stop('idle')
+  }, [open, stop])
   useEffect(() => {
     if (!open) return
     const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') close() }
@@ -117,6 +132,26 @@ export function LivePreviewModal({ open, onClose, onOpenPlans, onUsed }: LivePre
       document.removeEventListener('visibilitychange', onHide)
     }
   }, [close, open, stop])
+
+  useEffect(() => {
+    if (phase !== 'framing') return
+    const canvas = document.createElement('canvas')
+    canvas.width = 64
+    canvas.height = 36
+    const sample = () => {
+      const video = localVideoRef.current
+      if (!video || video.readyState < 2 || !video.videoWidth || !video.videoHeight) return
+      const context = canvas.getContext('2d', { willReadFrequently: true })
+      if (!context) return
+      const width = video.videoWidth * 0.6
+      const height = video.videoHeight * 0.6
+      context.drawImage(video, video.videoWidth * 0.2, video.videoHeight * 0.2, width, height, 0, 0, canvas.width, canvas.height)
+      setExposure(checkCameraExposure(context.getImageData(0, 0, canvas.width, canvas.height).data))
+    }
+    sample()
+    const timer = window.setInterval(sample, 750)
+    return () => window.clearInterval(timer)
+  }, [phase])
 
   const chooseUpload = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -136,15 +171,19 @@ export function LivePreviewModal({ open, onClose, onOpenPlans, onUsed }: LivePre
     storeSpeed(value)
   }
 
-  const canStart = phase !== 'starting' && phase !== 'connecting' && phase !== 'live'
-    && (source === 'wardrobe' ? Boolean(garmentId) : Boolean(upload))
+  const canAdjustReference = phase === 'idle' || phase === 'ended'
+  const canOpenCamera = canAdjustReference && (source === 'wardrobe' ? Boolean(garmentId) : Boolean(upload))
+  const canUseSession = status?.enabled && status.included
+    && (status.unlimited || (status.remaining ?? 0) >= sessionCost)
 
   const start = async () => {
-    if (!canStart) return
+    if (!canOpenCamera || !canUseSession) return
+    const attempt = ++attemptRef.current
+    const isCurrent = () => attemptRef.current === attempt
     setError(null)
+    setExposure('balanced')
     setPhase('starting')
     try {
-      // Ask for the camera before charging a session, so a denied permission costs nothing.
       let camera: MediaStream
       try {
         camera = await navigator.mediaDevices.getUserMedia({
@@ -154,23 +193,36 @@ export function LivePreviewModal({ open, onClose, onOpenPlans, onUsed }: LivePre
       } catch {
         throw new Error('Không mở được camera. Hãy cho phép Try-oh dùng camera trong trình duyệt rồi thử lại.')
       }
+      if (!isCurrent()) {
+        camera.getTracks().forEach((track) => track.stop())
+        return
+      }
       cameraRef.current = camera
       if (localVideoRef.current) localVideoRef.current.srcObject = camera
 
-      const [sdk, started] = await Promise.all([
-        import('@decartai/sdk'),
-        livePreviewApi.start(source === 'wardrobe'
-          ? { source: 'wardrobe', garmentId: garmentId!, speed }
-          : { source: 'upload', category: uploadCategory, speed }),
-      ])
+      const confirmed = await new Promise<boolean>((resolve) => {
+        confirmFrameRef.current = resolve
+        setPhase('framing')
+      })
+      if (!confirmed || !isCurrent()) return
+      setPhase('connecting')
+
+      const sdk = await import('@decartai/sdk')
+      if (!isCurrent()) return
+      const started = await livePreviewApi.start(source === 'wardrobe'
+        ? { source: 'wardrobe', garmentId: garmentId!, speed }
+        : { source: 'upload', category: uploadCategory, speed })
+      if (!isCurrent()) return
       setStatus(started.status)
       onUsed?.(started.status)
       const seconds = started.session.seconds
       setSecondsLeft(seconds)
-      setPhase('connecting')
 
       const client = sdk.createDecartClient({
-        apiKeyProvider: async () => (await livePreviewApi.token(started.session.id)).apiKey,
+        apiKeyProvider: async () => {
+          if (!isCurrent()) throw new Error('Phiên thử đã kết thúc.')
+          return (await livePreviewApi.token(started.session.id)).apiKey
+        },
       })
       const image = started.reference.imageBase64 ?? upload!
       timersRef.current.push(window.setTimeout(() => {
@@ -180,7 +232,7 @@ export function LivePreviewModal({ open, onClose, onOpenPlans, onUsed }: LivePre
 
       let countdownStarted = false
       const beginCountdown = () => {
-        if (countdownStarted) return
+        if (countdownStarted || !isCurrent()) return
         countdownStarted = true
         timersRef.current.forEach((timer) => window.clearTimeout(timer))
         timersRef.current = []
@@ -201,23 +253,28 @@ export function LivePreviewModal({ open, onClose, onOpenPlans, onUsed }: LivePre
         ...(started.session.speed === 'fast' ? { speed: 'fast' as const } : {}),
         initialState: { prompt: { text: started.reference.prompt, enhance: true }, image },
         onRemoteStream: (stream) => {
-          if (remoteVideoRef.current) remoteVideoRef.current.srcObject = stream
+          if (isCurrent() && remoteVideoRef.current) remoteVideoRef.current.srcObject = stream
         },
         onConnectionChange: (state) => {
           if (state === 'generating') beginCountdown()
         },
       })
+      if (!isCurrent()) {
+        realtime.disconnect()
+        return
+      }
       clientRef.current = realtime
       realtime.on('generationTick', beginCountdown)
-      realtime.on('sessionEnded', () => stop())
+      realtime.on('sessionEnded', () => { if (isCurrent()) stop() })
       realtime.on('error', (cause) => {
+        if (!isCurrent()) return
         setError(cause.message || 'Phiên thử trực tiếp bị gián đoạn.')
         stop()
       })
       if (realtime.getConnectionState() === 'generating') beginCountdown()
     } catch (cause) {
+      if (!isCurrent()) return
       stop('idle')
-      setPhase('idle')
       if (cause instanceof LivePreviewApiError && (cause.code === 'plan_required' || cause.code === 'quota_exhausted')) {
         livePreviewApi.status().then(setStatus).catch(() => undefined)
       }
@@ -228,6 +285,7 @@ export function LivePreviewModal({ open, onClose, onOpenPlans, onUsed }: LivePre
   if (!open) return null
 
   const busy = phase === 'starting' || phase === 'connecting'
+  const framing = phase === 'framing'
   const locked = status !== null && !status.included
   const exhausted = status !== null && status.included && !status.unlimited && status.remaining === 0
   const reset = formatReset(status?.nextResetAt ?? null)
@@ -289,7 +347,10 @@ export function LivePreviewModal({ open, onClose, onOpenPlans, onUsed }: LivePre
             <>
               <div className={`relative mt-5 overflow-hidden rounded-3xl bg-[#16171b] ${showStage ? 'aspect-video' : 'hidden'}`}>
                 <video ref={remoteVideoRef} autoPlay playsInline muted className={`absolute inset-0 size-full object-cover ${phase === 'live' ? 'opacity-100' : 'opacity-0'}`} />
-                <video ref={localVideoRef} autoPlay playsInline muted className={`absolute inset-0 size-full -scale-x-100 object-cover ${phase === 'live' ? 'opacity-0' : 'opacity-40'}`} />
+                <video ref={localVideoRef} autoPlay playsInline muted className={`absolute inset-0 size-full -scale-x-100 object-cover ${phase === 'live' ? 'opacity-0' : framing ? 'opacity-100' : 'opacity-40'}`} />
+                {framing && (
+                  <div aria-hidden="true" className="pointer-events-none absolute inset-x-[19%] bottom-[14%] top-[12%] rounded-2xl border-2 border-dashed border-white/90 shadow-[0_0_0_200vmax_rgba(0,0,0,0.28)]" />
+                )}
                 {busy && (
                   <div className="absolute inset-0 grid place-items-center text-center text-white">
                     <div>
@@ -312,7 +373,7 @@ export function LivePreviewModal({ open, onClose, onOpenPlans, onUsed }: LivePre
                 )}
               </div>
 
-              {!busy && phase !== 'live' && (
+              {canAdjustReference && (
                 <div className="mt-5">
                   <div className="grid grid-cols-2 rounded-2xl bg-black/[0.04] p-1 text-xs font-bold">
                     {(['wardrobe', 'upload'] as const).map((value) => (
@@ -361,7 +422,7 @@ export function LivePreviewModal({ open, onClose, onOpenPlans, onUsed }: LivePre
                 </div>
               )}
 
-              {!busy && phase !== 'live' && (
+              {canAdjustReference && (
                 <div className="mt-5">
                   <p className="text-[11px] font-bold text-ink/60">Chế độ</p>
                   <div className="mt-1.5 grid grid-cols-2 gap-2">
@@ -384,20 +445,39 @@ export function LivePreviewModal({ open, onClose, onOpenPlans, onUsed }: LivePre
                 </div>
               )}
 
+              {framing && (
+                <div className="mt-4 space-y-1 text-sm text-ink/75">
+                  <p>Đưa vùng mặc món đồ vào giữa khung và giữ tay tránh che trang phục.</p>
+                  <p>Camera đang hiển thị trên thiết bị. Khi bấm bắt đầu, video và ảnh món đồ mới được gửi để thử.</p>
+                  {exposure !== 'balanced' && (
+                    <p role="status" className="font-semibold text-amber-800">
+                      {exposure === 'dark' ? 'Khung hình khá tối. Hãy quay về phía nguồn sáng.' : 'Khung hình quá sáng. Hãy tránh đèn hoặc cửa sổ chiếu trực tiếp.'}
+                    </p>
+                  )}
+                </div>
+              )}
+
               {error && <p className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-xs text-red-700">{error}</p>}
 
               <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 {phase === 'live' ? (
                   <button type="button" onClick={() => stop()} className="rounded-full border border-black/10 px-5 py-2.5 text-xs font-bold text-ink transition hover:bg-black/5">Dừng</button>
+                ) : framing ? (
+                  <>
+                    <button type="button" onClick={() => stop('idle')} className="rounded-full border border-black/10 px-5 py-2.5 text-xs font-bold text-ink transition hover:bg-black/5">Quay lại chọn đồ</button>
+                    <button type="button" disabled={!canUseSession} onClick={confirmFrame} className="rounded-full bg-[#16171b] px-5 py-2.5 text-xs font-bold text-white disabled:opacity-40">
+                      Bắt đầu {status?.sessionSeconds ?? 10} giây (dùng {sessionCost} lượt)
+                    </button>
+                  </>
                 ) : (
                   <button
                     type="button"
-                    disabled={!canStart || exhausted || (status !== null && !status.enabled) || (status !== null && !status.unlimited && (status.remaining ?? 0) < sessionCost)}
+                    disabled={!canOpenCamera || !canUseSession}
                     onClick={() => void start()}
                     className="inline-flex items-center justify-center gap-2 rounded-full bg-[#16171b] px-5 py-2.5 text-xs font-bold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     {busy ? <LoaderCircle size={15} className="animate-spin" /> : phase === 'ended' ? <RotateCcw size={15} /> : <Camera size={15} />}
-                    {phase === 'ended' ? `Xem lại (dùng ${sessionCost} lượt)` : `Bắt đầu ${status?.sessionSeconds ?? 10} giây (dùng ${sessionCost} lượt)`}
+                    Căn khung camera
                   </button>
                 )}
               </div>
