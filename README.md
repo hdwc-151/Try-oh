@@ -6,6 +6,8 @@ Try-oh cho phép tải ảnh người và quần áo, tạo ảnh thử góc tr�
 
 ## Cần cài gì để chạy demo?
 
+Bản demo web có nút **Vào demo** để tạo phiên riêng trong trình duyệt. Dùng ảnh mẫu. Xem [cấu hình bản demo web](docs/PUBLISHING.md#bản-demo-web).
+
 | Cách thử | Thiết bị của người thử | Máy host |
 | --- | --- | --- |
 | Mở link web | Trình duyệt | Web/API ở địa chỉ truy cập được |
