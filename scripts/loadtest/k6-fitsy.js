@@ -3,6 +3,7 @@
 // Biến: PEAK (số người duyệt app lúc đỉnh, mặc định 100), THUMBS=0 để tải ảnh gốc thay vì ảnh thu nhỏ,
 // SAMPLE_DIR (ảnh mẫu để thử tải món đồ lên).
 import http from 'k6/http'
+import exec from 'k6/execution'
 import { check, group, sleep } from 'k6'
 import { SharedArray } from 'k6/data'
 import { Counter, Rate, Trend } from 'k6/metrics'
@@ -102,8 +103,9 @@ export function generate() {
   const items = list.status === 200 ? list.json('items') || [] : []
   const pick = items.sort(() => Math.random() - 0.5).slice(0, 3).map((item) => item.id)
   const started = Date.now()
+  const requestKey = `loadtest-${started}-${exec.scenario.iterationInTest}`
   const response = http.post(`${BASE}/api/generations/angles/front`, JSON.stringify({ garmentIds: pick, privacyConfirmed: true, preservePose: true }), {
-    headers: { ...headers, 'Content-Type': 'application/json', 'X-Fitting-Room-Request': '1' },
+    headers: { ...headers, 'Content-Type': 'application/json', 'X-Fitting-Room-Request': '1', 'Idempotency-Key': requestKey },
     tags: { name: 'generate' },
     timeout: '150s',
   })

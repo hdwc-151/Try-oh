@@ -25,6 +25,7 @@ import { PlanService } from '../../server/plans/plan-service.js'
 import { PostgresPlanRepository } from '../../server/plans/postgres-plan-repository.js'
 import { OpenRouterImageProvider } from '../../server/providers/openrouter-image-provider.js'
 import { PostgresSocialStore } from '../../server/social/postgres-social-store.js'
+import { PostgresGenerationRequestStore } from '../../server/services/generation-requests.js'
 import { LocalImageStorage } from '../../server/storage/local-image-storage.js'
 import { PostgresStorageCleanup } from '../../server/storage/storage-cleanup.js'
 import { configureSharp } from '../../server/storage/sharp-config.js'
@@ -107,6 +108,7 @@ const app = createApp(
   undefined,
   async () => { await pool.query('SELECT 1') },
   cleanup,
+  new PostgresGenerationRequestStore(pool),
   undefined,
   new PostgresOAuthStore(pool),
 )
