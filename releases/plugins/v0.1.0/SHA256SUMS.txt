@@ -1,0 +1,2 @@
+4c6c58975299abaef1f8097e3e1a2fe5bf27e89b68aa16e57b6328239f5f3c1f  hdwc-151-camera-exposure-0.1.0.tgz
+b810d3ce7a6ab5d4b4e68f9f9aad23ccb56d82932d3d59402ff65cabfba65917  hdwc-151-reference-image-encoder-0.1.0.tgz
