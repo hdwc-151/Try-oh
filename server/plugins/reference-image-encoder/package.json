@@ -1,0 +1,35 @@
+{
+  "name": "@hdwc-151/reference-image-encoder",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Prepare and cache bounded WebP references for image providers.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build",
+    "test": "npm run build && node --test test/package-contract.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hdwc-151/Try-oh.git",
+    "directory": "server/plugins/reference-image-encoder"
+  },
+  "devDependencies": {
+    "typescript": "~5.6.2",
+    "@types/node": "^26.0.0"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "sharp": "^0.35.5"
+  }
+}
