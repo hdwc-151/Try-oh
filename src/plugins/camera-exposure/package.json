@@ -1,0 +1,28 @@
+{
+  "name": "@hdwc-151/camera-exposure",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Classify the exposure of a local RGBA camera sample.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build",
+    "test": "npm run build && node --test test/package-contract.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hdwc-151/Try-oh.git",
+    "directory": "src/plugins/camera-exposure"
+  },
+  "devDependencies": {
+    "typescript": "~5.6.2"
+  }
+}
