@@ -1,6 +1,6 @@
 # Try-oh — AI Virtual Try-On
 
-[Tiếng Việt](README.md) · **English** · [Mobile](mobile/README.md#english) · [Publishing guide](docs/PUBLISHING.md) · [CI](https://github.com/hdwc-151/Try-oh/actions/workflows/ci.yml)
+[Tiếng Việt](README.md) · **English** · [Mobile](mobile/README.md#english) · [Publishing guide](docs/PUBLISHING.md) · [CI](https://github.com/hdwc-151/Try-oh/actions/workflows/ci.yml) · [Plugin packages](releases/plugins/v0.1.0/README.md)
 
 Upload a person photo and garment photos, generate front and back views, save outfits, and share or vote on them. The React website and the Android/iOS app use the same API. The product interface is primarily Vietnamese.
 

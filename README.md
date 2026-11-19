@@ -1,6 +1,6 @@
 # Try-oh — Thử đồ ảo bằng AI
 
-**Tiếng Việt** · [English](README.en.md) · [Mobile](mobile/README.md) · [Phát hành](docs/PUBLISHING.md) · [CI](https://github.com/hdwc-151/Try-oh/actions/workflows/ci.yml)
+**Tiếng Việt** · [English](README.en.md) · [Mobile](mobile/README.md) · [Phát hành](docs/PUBLISHING.md) · [CI](https://github.com/hdwc-151/Try-oh/actions/workflows/ci.yml) · [Gói plugin](releases/plugins/v0.1.0/README.md)
 
 Try-oh cho phép tải ảnh người và quần áo, tạo ảnh thử góc trước và sau, lưu outfit, chia sẻ và bình chọn. Web React và ứng dụng Android/iOS dùng chung API.
 
